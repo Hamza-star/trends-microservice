@@ -2,9 +2,14 @@
 import { Injectable } from '@nestjs/common';
 import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
+import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
+
+interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+}
 
 @Injectable()
 export class AuthService {
@@ -36,7 +41,7 @@ export class AuthService {
     return { message: 'Signup Successfull' };
   }
 
-  async login(email: string, password: string, timezone: string) {
+  async login(email: string, password: string, timezone: string = 'Asia/Karachi') {
     const user = await this.usersService.findByEmail(email);
     if (!user) {
       throw new BadRequestException('Invalid credentials');
@@ -51,11 +56,71 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
-      timezone: timezone || 'Asia/Karachi',
+      timezone: timezone,
     };
 
-    const token = this.jwtService.sign(payload);
+    const accessToken = this.jwtService.sign(
+      payload as Record<string, unknown>,
+      {
+        expiresIn: (this.configService.get<string>('JWT_EXPIRES_IN') ?? '15m') as JwtSignOptions['expiresIn'],
+      } as JwtSignOptions,
+    );
 
-    return { user, token };
+    const refreshToken = this.jwtService.sign(
+      { sub: user.id, type: 'refresh' } as Record<string, unknown>,
+      {
+        expiresIn: (this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d') as JwtSignOptions['expiresIn'],
+      } as JwtSignOptions,
+    );
+
+    return {
+      user,
+      accessToken,
+      refreshToken,
+    };
+  }
+
+  async refreshTokens(refreshToken: string): Promise<AuthTokens> {
+    if (!refreshToken) {
+      throw new BadRequestException('Refresh token is required');
+    }
+
+    try {
+      const payload = this.jwtService.verify(refreshToken);
+      if (payload.type !== 'refresh') {
+        throw new BadRequestException('Invalid refresh token');
+      }
+
+      const user = await this.usersService.findById(payload.sub);
+      if (!user) {
+        throw new BadRequestException('Invalid refresh token');
+      }
+
+      const accessToken = this.jwtService.sign(
+        {
+          sub: user.id,
+          email: user.email,
+          role: user.role,
+          timezone: 'Asia/Karachi',
+        } as Record<string, unknown>,
+        {
+          expiresIn: (this.configService.get<string>('JWT_EXPIRES_IN') ?? '15m') as JwtSignOptions['expiresIn'],
+        } as JwtSignOptions,
+      );
+
+      const newRefreshToken = this.jwtService.sign(
+        { sub: user.id, type: 'refresh' } as Record<string, unknown>,
+        {
+          expiresIn: (this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d') as JwtSignOptions['expiresIn'],
+        } as JwtSignOptions,
+      );
+
+      return {
+        accessToken,
+        refreshToken: newRefreshToken,
+      };
+    } catch {
+      throw new BadRequestException('Invalid or expired refresh token');
+    }
   }
 }
