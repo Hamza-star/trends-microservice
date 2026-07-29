@@ -7,7 +7,7 @@ import {
   Post,
   Put,
 } from '@nestjs/common';
-import { MenuService } from './menu.service';
+import { MenuService, type MenuTreeNode } from './menu.service';
 import { CreateMenuDto } from './schema/dto/create-menu.dto';
 import { UpdateMenuDto } from './schema/dto/update-menu.dto';
 import { Menu } from './schema/menu.schema';
@@ -24,7 +24,7 @@ export class MenuController {
   
 //  @UseGuards(JwtAuthGuard, AdminGuard)
   @Get()
-  getTree() {
+  getTree(): Promise<MenuTreeNode[]> {
     return this.menuService.getMenuTree();
   }
 

@@ -46,5 +46,19 @@ export class Menu {
 
 export const MenuSchema = SchemaFactory.createForClass(Menu);
 
-MenuSchema.index({ parentId: 1, order: 1 });
-MenuSchema.index({ parentId: 1 });
+// --- Uniqueness enforced at the DB level (removes race-condition risk) ---
+
+// Same order cannot repeat under the same parent (including root, parentId: null)
+MenuSchema.index({ parentId: 1, order: 1 }, { unique: true });
+
+// Same title cannot repeat under the same parent
+MenuSchema.index({ parentId: 1, title: 1 }, { unique: true });
+
+// --- Query performance ---
+
+// Speeds up "find all descendants of X" (ancestors: X) tree lookups
+MenuSchema.index({ ancestors: 1 });
+
+// NOTE: removed the standalone { parentId: 1 } index — it was redundant,
+// since { parentId: 1, order: 1 } already serves parentId-only queries
+// as a prefix index.

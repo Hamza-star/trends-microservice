@@ -1,20 +1,29 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import {
   BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { isValidObjectId, Model, Types } from 'mongoose';
+import { InjectModel, InjectConnection } from '@nestjs/mongoose';
+import { Connection, isValidObjectId, Model, Types } from 'mongoose';
 import { CreateMenuDto } from './schema/dto/create-menu.dto';
 import { UpdateMenuDto } from './schema/dto/update-menu.dto';
 import { MenuDocument } from './schema/menu.schema';
 
 type MenuType = 'TAB' | 'SECTION' | 'SUBSECTION' | 'PAGE';
+
+export interface MenuTreeNode {
+  _id?: Types.ObjectId;
+  title: string;
+  slug: string;
+  type: MenuType;
+  parentId: Types.ObjectId | null;
+  ancestors: Types.ObjectId[];
+  isActive: boolean;
+  order: number;
+  icon?: string | null;
+  children: MenuTreeNode[];
+  [key: string]: unknown;
+}
 
 @Injectable()
 export class MenuService {
@@ -28,17 +37,20 @@ export class MenuService {
   constructor(
     @InjectModel('Menu')
     private readonly menuModel: Model<MenuDocument>,
+    @InjectConnection()
+    private readonly connection: Connection,
   ) {}
 
+  // ---------------------------------------------------------------------
+  // CREATE
+  // ---------------------------------------------------------------------
   async createMenu(dto: CreateMenuDto) {
     const title = this.normalizeTitle(dto.title);
-    const slug = await this.buildSlug(dto.slug, title);
-
     if (!title) {
       throw new BadRequestException('Title is required');
     }
 
-    await this.ensureUniqueSlug(slug);
+    const slug = await this.buildSlugForCreate(dto.slug, title);
 
     if (!dto.parentId) {
       if (dto.type !== 'TAB') {
@@ -61,9 +73,7 @@ export class MenuService {
       });
     }
 
-    const resolvedParent = await this.resolveParent(dto.parentId, dto.type);
-    const parentId = resolvedParent.parentId;
-    const parent = resolvedParent.parent;
+    const { parentId, parent } = await this.resolveParent(dto.parentId, dto.type);
 
     if (!parent || !parentId) {
       throw new NotFoundException('Parent not found');
@@ -85,6 +95,9 @@ export class MenuService {
     });
   }
 
+  // ---------------------------------------------------------------------
+  // READ
+  // ---------------------------------------------------------------------
   async getAllMenus() {
     return this.menuModel.find().sort({ createdAt: 1 });
   }
@@ -100,6 +113,9 @@ export class MenuService {
     return menu;
   }
 
+  // ---------------------------------------------------------------------
+  // UPDATE
+  // ---------------------------------------------------------------------
   async updateMenu(id: string, dto: UpdateMenuDto) {
     this.ensureValidObjectId(id, 'Menu id');
 
@@ -113,16 +129,15 @@ export class MenuService {
     if (!validTypes.includes(nextType)) {
       throw new BadRequestException('Invalid menu type');
     }
+
     const nextTitle =
       dto.title !== undefined ? this.normalizeTitle(dto.title) : menu.title;
-    const nextSlug =
-      dto.slug !== undefined ? this.normalizeSlug(dto.slug) : undefined;
 
     if (dto.title !== undefined && !nextTitle) {
       throw new BadRequestException('Title is required');
     }
 
-    if (dto.slug !== undefined && !nextSlug) {
+    if (dto.slug !== undefined && !this.normalizeSlug(dto.slug)) {
       throw new BadRequestException('Slug is required');
     }
 
@@ -130,6 +145,7 @@ export class MenuService {
     let nextAncestors: Types.ObjectId[] = menu.ancestors ?? [];
 
     if (dto.parentId !== undefined) {
+      // --- Parent is being changed explicitly ---
       if (dto.parentId === null || dto.parentId === '') {
         if (nextType !== 'TAB') {
           throw new BadRequestException('Only TAB can be at root level');
@@ -141,8 +157,34 @@ export class MenuService {
         if (!resolvedParent.parentId || !resolvedParent.parent) {
           throw new NotFoundException('Parent not found');
         }
+
+        this.ensureNoCycle(id, resolvedParent.parent);
+
         nextParentId = resolvedParent.parentId;
-        nextAncestors = [...(resolvedParent.parent.ancestors ?? []), resolvedParent.parent._id];
+        nextAncestors = [
+          ...(resolvedParent.parent.ancestors ?? []),
+          resolvedParent.parent._id,
+        ];
+      }
+    } else if (dto.type !== undefined && dto.type !== menu.type) {
+      // --- Only type changed: re-validate against the EXISTING parent ---
+      if (!menu.parentId) {
+        if (nextType !== 'TAB') {
+          throw new BadRequestException(
+            'Only TAB can exist without a parent; provide a parentId to change type',
+          );
+        }
+      } else {
+        const currentParent = await this.menuModel.findById(menu.parentId);
+        if (!currentParent) {
+          throw new NotFoundException('Existing parent not found');
+        }
+        const allowedParents = this.validParentMap[nextType];
+        if (!allowedParents?.includes(currentParent.type as MenuType)) {
+          throw new BadRequestException(
+            `${nextType} cannot exist under ${currentParent.type}; provide a new parentId`,
+          );
+        }
       }
     }
 
@@ -150,47 +192,66 @@ export class MenuService {
       await this.ensureUniqueTitle(nextTitle, nextParentId, id);
     }
 
-    if (dto.slug !== undefined && nextSlug !== undefined && nextSlug !== menu.slug) {
-      await this.ensureUniqueSlug(nextSlug, id);
-    }
-
     if (dto.order !== undefined && dto.order !== menu.order) {
       await this.ensureUniqueOrder(dto.order, nextParentId, id);
     }
 
+    // --- Slug resolution (consistent with create: explicit slug throws on
+    // collision, auto-derived slug from title auto-suffixes) ---
     let slug = menu.slug;
-    if (dto.title !== undefined && dto.slug === undefined && nextTitle !== menu.title) {
-      slug = this.generateSlug(nextTitle);
-      slug = await this.generateUniqueSlug(slug, id);
-    } else if (dto.slug !== undefined && nextSlug !== undefined) {
-      slug = nextSlug;
+    if (dto.slug !== undefined) {
+      const normalizedSlug = this.normalizeSlug(dto.slug);
+      if (normalizedSlug !== menu.slug) {
+        await this.ensureUniqueSlug(normalizedSlug, id);
+      }
+      slug = normalizedSlug;
+    } else if (dto.title !== undefined && nextTitle !== menu.title) {
+      const base = this.generateSlug(nextTitle);
+      slug = await this.generateUniqueSlug(base, id);
     }
 
     const updateData: Partial<MenuDocument> = {
       title: dto.title !== undefined ? nextTitle : menu.title,
       slug,
-      type: dto.type ?? menu.type,
+      type: nextType,
       parentId: nextParentId,
       ancestors: nextAncestors,
       order: dto.order ?? menu.order,
       icon: dto.icon !== undefined ? dto.icon : menu.icon,
     };
 
-    const updated = await this.menuModel.findByIdAndUpdate(id, updateData, {
-      new: true,
-    });
+    const session = await this.connection.startSession();
+    try {
+      let updated: MenuDocument | null = null;
 
-    if (!updated) {
-      throw new NotFoundException('Menu not found');
+      await session.withTransaction(async () => {
+        updated = await this.menuModel.findByIdAndUpdate(id, updateData, {
+          new: true,
+          session,
+        });
+
+        if (!updated) {
+          throw new NotFoundException('Menu not found');
+        }
+
+        if (dto.parentId !== undefined) {
+          await this.propagateAncestorUpdates(
+            updated._id,
+            updated.ancestors ?? [],
+            session,
+          );
+        }
+      });
+
+      return updated!;
+    } finally {
+      await session.endSession();
     }
-
-    if (dto.parentId !== undefined) {
-      await this.propagateAncestorUpdates(updated._id, updated.ancestors ?? []);
-    }
-
-    return updated;
   }
 
+  // ---------------------------------------------------------------------
+  // DELETE
+  // ---------------------------------------------------------------------
   async deleteMenu(id: string) {
     this.ensureValidObjectId(id, 'Menu id');
 
@@ -211,25 +272,23 @@ export class MenuService {
     };
   }
 
-  async getMenuTree() {
-    const menus = await this.menuModel.find().lean();
+  // ---------------------------------------------------------------------
+  // TREE
+  // ---------------------------------------------------------------------
+  async getMenuTree(): Promise<MenuTreeNode[]> {
+    const menus = await this.menuModel.find().lean<MenuTreeNode[]>();
 
-    const map = new Map<string, Record<string, any>>();
+    const map = new Map<string, MenuTreeNode>();
 
     menus.forEach((menu) => {
-      map.set(menu._id.toString(), {
-        ...menu,
-        children: [],
-      });
+      map.set(menu._id!.toString(), { ...menu, children: [] });
     });
 
-    const tree: Record<string, any>[] = [];
+    const tree: MenuTreeNode[] = [];
 
     menus.forEach((menu) => {
-      const current = map.get(menu._id.toString());
-      if (!current) {
-        return;
-      }
+      const current = map.get(menu._id!.toString());
+      if (!current) return;
 
       if (!menu.parentId) {
         tree.push(current);
@@ -241,36 +300,37 @@ export class MenuService {
       }
     });
 
-    const sortByOrder = (items: Record<string, any>[]) => {
-      return items.sort((a, b) => (a.order || 0) - (b.order || 0));
-    };
+    const sortByOrder = (items: MenuTreeNode[]) =>
+      items.sort((a, b) => (a.order || 0) - (b.order || 0));
 
-    const sortedTree = sortByOrder(tree);
-
-    const sortChildrenRecursively = (items: Record<string, any>[]) => {
+    const sortChildrenRecursively = (items: MenuTreeNode[]) => {
       items.forEach((item) => {
-        if (item.children && item.children.length > 0) {
+        if (item.children.length > 0) {
           item.children = sortByOrder(item.children);
           sortChildrenRecursively(item.children);
         }
       });
     };
 
+    const sortedTree = sortByOrder(tree);
     sortChildrenRecursively(sortedTree);
 
-    const removeUnwantedFields = (items: Record<string, any>[]) => {
-      return items.map((item) => {
-        const { createdAt, updatedAt, __v, ...cleanItem } = item;
-        if (cleanItem.children && cleanItem.children.length > 0) {
-          cleanItem.children = removeUnwantedFields(cleanItem.children);
-        }
-        return cleanItem;
+    const removeUnwantedFields = (items: MenuTreeNode[]): MenuTreeNode[] =>
+      items.map((item) => {
+        const { createdAt, updatedAt, __v, ...cleanItem } = item as MenuTreeNode &
+          Record<string, unknown>;
+        return {
+          ...cleanItem,
+          children: removeUnwantedFields(cleanItem.children as MenuTreeNode[]),
+        } as MenuTreeNode;
       });
-    };
 
     return removeUnwantedFields(sortedTree);
   }
 
+  // ---------------------------------------------------------------------
+  // PRIVATE HELPERS
+  // ---------------------------------------------------------------------
   private normalizeTitle(title: string): string {
     return title.trim();
   }
@@ -287,23 +347,37 @@ export class MenuService {
       .replace(/^-+|-+$/g, '');
   }
 
-  private async buildSlug(slug: string | undefined, title: string): Promise<string> {
+  /**
+   * Create-time slug resolution:
+   * - explicit slug provided -> normalize, uniqueness checked by caller (throws on collision)
+   * - no slug provided -> auto-generate from title AND auto-suffix on collision
+   */
+  private async buildSlugForCreate(
+    slug: string | undefined,
+    title: string,
+  ): Promise<string> {
     if (slug) {
       const normalizedSlug = this.normalizeSlug(slug);
       if (!normalizedSlug) {
         throw new BadRequestException('Slug is required');
       }
+      await this.ensureUniqueSlug(normalizedSlug);
       return normalizedSlug;
     }
 
-    return this.generateSlug(title);
+    const base = this.generateSlug(title);
+    return this.generateUniqueSlug(base);
   }
 
-  private async generateUniqueSlug(baseSlug: string, excludeId?: string): Promise<string> {
+  private async generateUniqueSlug(
+    baseSlug: string,
+    excludeId?: string,
+  ): Promise<string> {
     let uniqueSlug = baseSlug;
     let counter = 1;
 
-    while (await this.menuModel.findOne({ slug: uniqueSlug, _id: { $ne: excludeId ?? undefined } })) {
+    // eslint-disable-next-line no-await-in-loop
+    while (await this.findBySlug(uniqueSlug, excludeId)) {
       uniqueSlug = `${baseSlug}-${counter}`;
       counter += 1;
     }
@@ -311,16 +385,28 @@ export class MenuService {
     return uniqueSlug;
   }
 
+  private async findBySlug(slug: string, excludeId?: string) {
+    const filter: Record<string, unknown> = { slug };
+    if (excludeId) {
+      filter._id = { $ne: excludeId };
+    }
+    return this.menuModel.findOne(filter);
+  }
+
   private async ensureUniqueTitle(
     title: string,
     parentId: Types.ObjectId | null,
     excludeId?: string,
   ): Promise<void> {
-    const existing = await this.menuModel.findOne({
+    const filter: Record<string, unknown> = {
       title,
       parentId: parentId ?? null,
-      _id: { $ne: excludeId ?? undefined },
-    });
+    };
+    if (excludeId) {
+      filter._id = { $ne: excludeId };
+    }
+
+    const existing = await this.menuModel.findOne(filter);
 
     if (existing) {
       const parentName = parentId ? 'under parent' : 'at root level';
@@ -331,10 +417,7 @@ export class MenuService {
   }
 
   private async ensureUniqueSlug(slug: string, excludeId?: string): Promise<void> {
-    const existing = await this.menuModel.findOne({
-      slug,
-      _id: { $ne: excludeId ?? undefined },
-    });
+    const existing = await this.findBySlug(slug, excludeId);
 
     if (existing) {
       throw new BadRequestException(`Slug '${slug}' already exists`);
@@ -346,11 +429,15 @@ export class MenuService {
     parentId: Types.ObjectId | null,
     excludeId?: string,
   ): Promise<void> {
-    const existingOrder = await this.menuModel.findOne({
+    const filter: Record<string, unknown> = {
       parentId: parentId ?? null,
       order,
-      _id: { $ne: excludeId ?? undefined },
-    });
+    };
+    if (excludeId) {
+      filter._id = { $ne: excludeId };
+    }
+
+    const existingOrder = await this.menuModel.findOne(filter);
 
     if (existingOrder) {
       throw new BadRequestException(
@@ -396,9 +483,29 @@ export class MenuService {
     }
 
     return {
-      parentId: parent._id,
+      parentId: parent._id as Types.ObjectId,
       parent,
     };
+  }
+
+  /**
+   * Prevents moving a node under itself or under one of its own descendants,
+   * which would otherwise create an infinite ancestor chain.
+   */
+  private ensureNoCycle(nodeId: string, newParent: MenuDocument): void {
+    if (newParent._id.toString() === nodeId) {
+      throw new BadRequestException('A menu cannot be its own parent');
+    }
+
+    const parentAncestorIds = (newParent.ancestors ?? []).map((a) =>
+      a.toString(),
+    );
+
+    if (parentAncestorIds.includes(nodeId)) {
+      throw new BadRequestException(
+        'Cannot move a menu under one of its own descendants',
+      );
+    }
   }
 
   private ensureValidObjectId(id: string, fieldName: string): void {
@@ -410,15 +517,22 @@ export class MenuService {
   private async propagateAncestorUpdates(
     menuId: Types.ObjectId,
     ancestors: Types.ObjectId[],
+    session: import('mongoose').ClientSession,
   ): Promise<void> {
-    const children = await this.menuModel.find({ parentId: menuId });
+    const children = await this.menuModel.find({ parentId: menuId }, null, {
+      session,
+    });
 
     for (const child of children) {
       const childAncestors = [...ancestors, menuId];
-      await this.menuModel.findByIdAndUpdate(child._id, {
-        ancestors: childAncestors,
-      });
-      await this.propagateAncestorUpdates(child._id, childAncestors);
+      // eslint-disable-next-line no-await-in-loop
+      await this.menuModel.findByIdAndUpdate(
+        child._id,
+        { ancestors: childAncestors },
+        { session },
+      );
+      // eslint-disable-next-line no-await-in-loop
+      await this.propagateAncestorUpdates(child._id as Types.ObjectId, childAncestors, session);
     }
   }
 }
