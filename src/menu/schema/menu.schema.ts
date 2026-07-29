@@ -36,6 +36,12 @@ export class Menu {
 
   @Prop({ default: 0 })
   order!: number;
+
+  @Prop({
+    type: String,
+    default: null,
+  })
+  icon!: string | null;
 }
 
 export const MenuSchema = SchemaFactory.createForClass(Menu);

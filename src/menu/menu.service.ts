@@ -57,6 +57,7 @@ export class MenuService {
         ancestors: [],
         isActive: true,
         order,
+        icon: dto.icon ?? null,
       });
     }
 
@@ -80,6 +81,7 @@ export class MenuService {
       ancestors: [...(parent.ancestors ?? []), parent._id],
       isActive: true,
       order,
+      icon: dto.icon ?? null,
     });
   }
 
@@ -171,6 +173,7 @@ export class MenuService {
       parentId: nextParentId,
       ancestors: nextAncestors,
       order: dto.order ?? menu.order,
+      icon: dto.icon !== undefined ? dto.icon : menu.icon,
     };
 
     const updated = await this.menuModel.findByIdAndUpdate(id, updateData, {

@@ -36,4 +36,8 @@ export class UpdateMenuDto extends PartialType(CreateMenuDto) {
   @IsInt()
   @Min(0)
   order?: number;
+
+  @IsOptional()
+  @IsString()
+  icon?: string | null;
 }
