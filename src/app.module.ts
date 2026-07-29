@@ -8,6 +8,7 @@ import { MenuModule } from './menu/menu.module';
 import { PrivellegesModule } from './privelleges/privelleges.module';
 import { RolesModule } from './roles/roles.module';
 import { UsersModule } from './users/users.module';
+import { LabelsModule } from './labels/labels.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { UsersModule } from './users/users.module';
     RolesModule,
     PrivellegesModule,
     MenuModule,
+    LabelsModule
   ],
   controllers: [AppController],
   providers: [AppService],
