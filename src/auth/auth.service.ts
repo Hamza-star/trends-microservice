@@ -66,6 +66,7 @@ export class AuthService {
       userId,
       tokens.refreshToken,
       tokens.refreshTokenId,
+      tokens.refreshTokenId,
       tokens.refreshTokenExpiresAt,
     );
 
@@ -98,12 +99,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    await this.refreshTokenService.validateSession(
-      payload.sub,
-      payload.jti,
-      refreshToken,
-    );
-
     const user = await this.usersService.findAuthUserById(payload.sub);
     if (!user) {
       throw new UnauthorizedException('Invalid refresh token');
@@ -122,11 +117,15 @@ export class AuthService {
       timezone: 'Asia/Karachi',
     });
 
-    await this.persistRefreshTokenSession(
-      userId,
-      tokens.refreshToken,
-      tokens.refreshTokenId,
-      tokens.refreshTokenExpiresAt,
+    await this.refreshTokenService.rotateSession(
+      payload.sub,
+      payload.jti,
+      refreshToken,
+      {
+        refreshToken: tokens.refreshToken,
+        jti: tokens.refreshTokenId,
+        expiresAt: tokens.refreshTokenExpiresAt,
+      },
     );
 
     return {
@@ -139,12 +138,14 @@ export class AuthService {
     userId: string,
     refreshToken: string,
     jti: string,
+    familyId: string,
     expiresAt: Date,
   ): Promise<void> {
     await this.refreshTokenService.createSession(
       userId,
       refreshToken,
       jti,
+      familyId,
       expiresAt,
     );
   }

@@ -15,6 +15,9 @@ export class RefreshToken {
   @Prop({ required: true, unique: true, sparse: true })
   jti!: string;
 
+  @Prop({ required: true, index: true })
+  familyId!: string;
+
   @Prop({ required: true })
   expiresAt!: Date;
 

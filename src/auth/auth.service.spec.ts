@@ -27,7 +27,7 @@ describe('AuthService', () => {
     expect(service).toBeDefined();
   });
 
-  it('rejects an inactive user after validating the refresh-token session', async () => {
+  it('rejects an inactive user before rotating the refresh-token session', async () => {
     const usersService = {
       findAuthUserById: jest.fn().mockResolvedValue({
         id: '507f1f77bcf86cd799439011',
@@ -35,7 +35,7 @@ describe('AuthService', () => {
       }),
     } as unknown as UsersService;
     const refreshTokenService = {
-      validateSession: jest.fn().mockResolvedValue(undefined),
+      rotateSession: jest.fn().mockResolvedValue(undefined),
     } as unknown as RefreshTokenService;
     const authTokenService = {
       verifyRefreshToken: jest.fn().mockReturnValue({
@@ -54,10 +54,6 @@ describe('AuthService', () => {
     await expect(authService.refreshTokens('refresh-token')).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
-    expect(refreshTokenService.validateSession).toHaveBeenCalledWith(
-      '507f1f77bcf86cd799439011',
-      'f07fdc23-a523-4f95-befc-9667f81911ab',
-      'refresh-token',
-    );
+    expect(refreshTokenService.rotateSession).not.toHaveBeenCalled();
   });
 });
