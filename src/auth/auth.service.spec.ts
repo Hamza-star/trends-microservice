@@ -82,4 +82,23 @@ describe('AuthService', () => {
       'refresh-token',
     );
   });
+
+  it('delegates logout-all to the refresh-token session service', async () => {
+    const refreshTokenService = {
+      revokeAllUserSessions: jest.fn().mockResolvedValue(2),
+    } as unknown as RefreshTokenService;
+    const authService = new AuthService(
+      {} as UsersService,
+      {} as ConfigService,
+      refreshTokenService,
+      {} as AuthTokenService,
+    );
+
+    await expect(
+      authService.logoutAllDevices('507f1f77bcf86cd799439011'),
+    ).resolves.toBe(2);
+    expect(refreshTokenService.revokeAllUserSessions).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439011',
+    );
+  });
 });

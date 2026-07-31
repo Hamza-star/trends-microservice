@@ -157,6 +157,10 @@ export class AuthService {
     );
   }
 
+  async logoutAllDevices(userId: string): Promise<number> {
+    return this.refreshTokenService.revokeAllUserSessions(userId);
+  }
+
   private async persistRefreshTokenSession(
     userId: string,
     refreshToken: string,

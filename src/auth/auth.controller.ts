@@ -1,8 +1,25 @@
-import { Body, Controller, Post, Req, Res, UsePipes, ValidationPipe } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Post,
+  Req,
+  Res,
+  UnauthorizedException,
+  UseGuards,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignupDto, LoginDto } from './dtos/auth.dtos';
 import { Throttle } from '@nestjs/throttler';
 import type { CookieOptions, Request, Response } from 'express';
+import { JwtAuthGuard } from './jwt.authguard';
+
+interface AuthenticatedRequest extends Request {
+  user?: {
+    userId?: string;
+  };
+}
 
 @Controller('auth')
 @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
@@ -65,6 +82,26 @@ export class AuthController {
     response.clearCookie('refreshToken', this.refreshTokenCookieOptions);
 
     return { message: 'Logged out successfully' };
+  }
+
+  @Post('logout-all')
+  @UseGuards(JwtAuthGuard)
+  async logoutAllDevices(
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const userId = request.user?.userId;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+
+    const revokedSessions = await this.authService.logoutAllDevices(userId);
+    response.clearCookie('refreshToken', this.refreshTokenCookieOptions);
+
+    return {
+      message: 'Logged out from all devices successfully',
+      revokedSessions,
+    };
   }
 
   private readonly refreshTokenCookieOptions: CookieOptions = {

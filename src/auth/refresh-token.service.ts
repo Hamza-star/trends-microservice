@@ -186,6 +186,29 @@ export class RefreshTokenService {
     }
   }
 
+  async revokeAllUserSessions(userId: string): Promise<number> {
+    const databaseSession = await this.connection.startSession();
+    let revokedCount = 0;
+
+    try {
+      await databaseSession.withTransaction(async () => {
+        const result = await this.refreshTokenModel.updateMany(
+          {
+            userId: new Types.ObjectId(userId),
+            revokedAt: null,
+          },
+          { $set: { revokedAt: new Date(), revokedReason: 'logout-all' } },
+          { session: databaseSession },
+        );
+        revokedCount = result.modifiedCount;
+      });
+    } finally {
+      await databaseSession.endSession();
+    }
+
+    return revokedCount;
+  }
+
   private async revokeFamily(
     userId: string,
     familyId: string,

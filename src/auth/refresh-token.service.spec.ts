@@ -165,4 +165,33 @@ describe('RefreshTokenService', () => {
       { session: transactionSession },
     );
   });
+
+  it('revokes every active session for a user during logout-all', async () => {
+    const transactionSession = {
+      withTransaction: jest.fn(async (callback: () => Promise<void>) => callback()),
+      endSession: jest.fn().mockResolvedValue(undefined),
+    };
+    const model = {
+      updateMany: jest.fn().mockResolvedValue({ modifiedCount: 3 }),
+    } as unknown as Model<RefreshTokenDocument>;
+    const service = new RefreshTokenService(
+      model,
+      {} as ConfigService,
+      {
+        startSession: jest.fn().mockResolvedValue(transactionSession),
+      } as unknown as Connection,
+    );
+
+    await expect(
+      service.revokeAllUserSessions('507f1f77bcf86cd799439011'),
+    ).resolves.toBe(3);
+
+    expect(model.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ revokedAt: null }),
+      expect.objectContaining({
+        $set: expect.objectContaining({ revokedReason: 'logout-all' }),
+      }),
+      { session: transactionSession },
+    );
+  });
 });
