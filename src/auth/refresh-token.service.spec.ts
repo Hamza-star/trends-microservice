@@ -120,4 +120,49 @@ describe('RefreshTokenService', () => {
       { session: transactionSession },
     );
   });
+
+  it('revokes the active token family during logout', async () => {
+    const tokenHash = await bcrypt.hash('refresh-token', 4);
+    const tokenSession = {
+      tokenHash,
+      familyId: 'family-id',
+      jti: 'f07fdc23-a523-4f95-befc-9667f81911ab',
+    };
+    const findOneExec = jest.fn().mockResolvedValue(tokenSession);
+    const querySession = jest.fn().mockReturnValue({ exec: findOneExec });
+    const select = jest.fn().mockReturnValue({ session: querySession });
+    const model = {
+      findOne: jest.fn().mockReturnValue({ select }),
+      updateMany: jest.fn().mockResolvedValue(undefined),
+    } as unknown as Model<RefreshTokenDocument>;
+    const transactionSession = {
+      withTransaction: jest.fn(async (callback: () => Promise<void>) => callback()),
+      endSession: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new RefreshTokenService(
+      model,
+      {} as ConfigService,
+      {
+        startSession: jest.fn().mockResolvedValue(transactionSession),
+      } as unknown as Connection,
+    );
+
+    await expect(
+      service.revokeCurrentSession(
+        '507f1f77bcf86cd799439011',
+        'f07fdc23-a523-4f95-befc-9667f81911ab',
+        'refresh-token',
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(model.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        $or: [{ familyId: 'family-id' }, { jti: 'family-id' }],
+      }),
+      expect.objectContaining({
+        $set: expect.objectContaining({ revokedReason: 'logout' }),
+      }),
+      { session: transactionSession },
+    );
+  });
 });

@@ -86,7 +86,13 @@ export class RefreshTokenService {
         const familyId = session.familyId ?? session.jti;
         if (session.revokedAt) {
           if (session.revokedReason === 'rotated') {
-            await this.revokeFamily(userId, familyId, now, databaseSession);
+            await this.revokeFamily(
+              userId,
+              familyId,
+              now,
+              'replay-detected',
+              databaseSession,
+            );
             replayDetected = true;
             return;
           }
@@ -103,7 +109,13 @@ export class RefreshTokenService {
           .exec();
 
         if (!revokedSession) {
-          await this.revokeFamily(userId, familyId, now, databaseSession);
+          await this.revokeFamily(
+            userId,
+            familyId,
+            now,
+            'replay-detected',
+            databaseSession,
+          );
           replayDetected = true;
           return;
         }
@@ -134,10 +146,51 @@ export class RefreshTokenService {
     }
   }
 
+  async revokeCurrentSession(
+    userId: string,
+    jti: string,
+    presentedRefreshToken: string,
+  ): Promise<void> {
+    const databaseSession = await this.connection.startSession();
+
+    try {
+      await databaseSession.withTransaction(async () => {
+        const tokenSession = await this.refreshTokenModel
+          .findOne({ userId: new Types.ObjectId(userId), jti })
+          .select('+tokenHash')
+          .session(databaseSession)
+          .exec();
+
+        if (!tokenSession) {
+          return;
+        }
+
+        const matchesStoredHash = await bcrypt.compare(
+          presentedRefreshToken,
+          tokenSession.tokenHash,
+        );
+        if (!matchesStoredHash) {
+          return;
+        }
+
+        await this.revokeFamily(
+          userId,
+          tokenSession.familyId ?? tokenSession.jti,
+          new Date(),
+          'logout',
+          databaseSession,
+        );
+      });
+    } finally {
+      await databaseSession.endSession();
+    }
+  }
+
   private async revokeFamily(
     userId: string,
     familyId: string,
     revokedAt: Date,
+    revokedReason: 'logout' | 'replay-detected',
     databaseSession: ClientSession,
   ): Promise<void> {
     await this.refreshTokenModel.updateMany(
@@ -146,7 +199,7 @@ export class RefreshTokenService {
         revokedAt: null,
         $or: [{ familyId }, { jti: familyId }],
       },
-      { $set: { revokedAt, revokedReason: 'replay-detected' } },
+      { $set: { revokedAt, revokedReason } },
       { session: databaseSession },
     );
   }

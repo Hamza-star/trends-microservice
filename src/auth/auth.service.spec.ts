@@ -56,4 +56,30 @@ describe('AuthService', () => {
     );
     expect(refreshTokenService.rotateSession).not.toHaveBeenCalled();
   });
+
+  it('revokes the current refresh-token session during logout', async () => {
+    const refreshTokenService = {
+      revokeCurrentSession: jest.fn().mockResolvedValue(undefined),
+    } as unknown as RefreshTokenService;
+    const authTokenService = {
+      verifyRefreshToken: jest.fn().mockReturnValue({
+        sub: '507f1f77bcf86cd799439011',
+        type: 'refresh',
+        jti: 'f07fdc23-a523-4f95-befc-9667f81911ab',
+      }),
+    } as unknown as AuthTokenService;
+    const authService = new AuthService(
+      {} as UsersService,
+      {} as ConfigService,
+      refreshTokenService,
+      authTokenService,
+    );
+
+    await expect(authService.logout('refresh-token')).resolves.toBeUndefined();
+    expect(refreshTokenService.revokeCurrentSession).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439011',
+      'f07fdc23-a523-4f95-befc-9667f81911ab',
+      'refresh-token',
+    );
+  });
 });

@@ -2,7 +2,7 @@ import { Body, Controller, Post, Req, Res, UsePipes, ValidationPipe } from '@nes
 import { AuthService } from './auth.service';
 import { SignupDto, LoginDto } from './dtos/auth.dtos';
 import { Throttle } from '@nestjs/throttler';
-import type { Request, Response } from 'express';
+import type { CookieOptions, Request, Response } from 'express';
 
 @Controller('auth')
 @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
@@ -33,13 +33,7 @@ export class AuthController {
   ) {
     const result = await this.authService.login(dto.email, dto.password, dto.timezone);
 
-    response.cookie('refreshToken', result.refreshToken, {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
+    response.cookie('refreshToken', result.refreshToken, this.refreshTokenCookieOptions);
 
     return {
       user: result.user,
@@ -55,16 +49,29 @@ export class AuthController {
     const refreshToken = request.cookies?.refreshToken;
     const tokens = await this.authService.refreshTokens(refreshToken);
 
-    response.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
+    response.cookie('refreshToken', tokens.refreshToken, this.refreshTokenCookieOptions);
 
     return {
       accessToken: tokens.accessToken,
     };
   }
+
+  @Post('logout')
+  async logout(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    await this.authService.logout(request.cookies?.refreshToken);
+    response.clearCookie('refreshToken', this.refreshTokenCookieOptions);
+
+    return { message: 'Logged out successfully' };
+  }
+
+  private readonly refreshTokenCookieOptions: CookieOptions = {
+    httpOnly: true,
+    secure: false,
+    sameSite: 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: '/',
+  };
 }

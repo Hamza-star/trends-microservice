@@ -134,6 +134,29 @@ export class AuthService {
     };
   }
 
+  async logout(refreshToken?: string): Promise<void> {
+    if (!refreshToken) {
+      return;
+    }
+
+    let payload: ReturnType<AuthTokenService['verifyRefreshToken']>;
+    try {
+      payload = this.authTokenService.verifyRefreshToken(refreshToken);
+    } catch {
+      return;
+    }
+
+    if (payload.type !== 'refresh' || !payload.jti) {
+      return;
+    }
+
+    await this.refreshTokenService.revokeCurrentSession(
+      payload.sub,
+      payload.jti,
+      refreshToken,
+    );
+  }
+
   private async persistRefreshTokenSession(
     userId: string,
     refreshToken: string,
