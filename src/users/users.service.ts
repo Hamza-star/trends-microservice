@@ -413,6 +413,13 @@ export class UsersService {
     return this.userModel.findOne({ email }).exec();
   }
 
+  async findAuthUserById(id: string): Promise<Users | null> {
+    return this.userModel
+      .findById(id)
+      .select('email role userStatus')
+      .exec();
+  }
+
   // async updateUser(
   //   id: string,
   //   updates: Partial<Users>,

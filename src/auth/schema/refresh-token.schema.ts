@@ -12,6 +12,9 @@ export class RefreshToken {
   @Prop({ required: true, select: false })
   tokenHash!: string;
 
+  @Prop({ required: true, unique: true, sparse: true })
+  jti!: string;
+
   @Prop({ required: true })
   expiresAt!: Date;
 

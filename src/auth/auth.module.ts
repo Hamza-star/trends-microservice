@@ -11,6 +11,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { MongooseModule } from '@nestjs/mongoose';
 import { RefreshToken, RefreshTokenSchema } from './schema/refresh-token.schema';
 import { RefreshTokenService } from './refresh-token.service';
+import { AuthTokenService } from './auth-token.service';
 
 @Module({
   imports: [
@@ -32,6 +33,6 @@ import { RefreshTokenService } from './refresh-token.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RefreshTokenService],
+  providers: [AuthService, JwtStrategy, RefreshTokenService, AuthTokenService],
 })
 export class AuthModule {}
