@@ -1,122 +1,393 @@
-# User Management NestJS Architecture
+# User Management NestJS Module
 
-## Overview
-This project is a modular NestJS backend for user management, authentication, role-based access control, menu management, and permission-driven navigation. The architecture is designed to be scalable, maintainable, and close to production-ready patterns.
+A NestJS + MongoDB starter module for user management, role-based access control, and JWT authentication. It is designed to be cloned into an application and extended without rebuilding the core authentication flow.
 
-## Core Architectural Principles
+The module uses short-lived access tokens and database-backed, rotating refresh-token sessions. Refresh tokens are stored only in an `httpOnly` cookie on the client and as bcrypt hashes in MongoDB.
 
-### 1. Modular Design
-The application is split into feature modules:
-- Auth module: login, signup, JWT issuance, and authentication flow
-- Users module: user lifecycle, profile access, and role assignment
-- Roles module: role definitions and role-to-menu permissions
-- Menu module: hierarchical navigation structure
-- Privileges module: permission definitions for authorization logic
+## What is included
 
-This keeps each domain focused and makes the system easier to extend.
+- NestJS 11, TypeScript, MongoDB, and Mongoose
+- Email/password authentication with bcrypt password hashing
+- JWT access-token authentication via Passport
+- Refresh-token sessions stored as bcrypt hashes in MongoDB
+- Unique refresh-token IDs (`jti`) and token-family tracking
+- Transactional refresh-token rotation
+- Refresh-token replay detection and token-family revocation
+- Logout for the current device
+- Logout from all devices
+- Role-based authorization with `JwtAuthGuard` and `AdminGuard`
+- User, role, privilege, label, and menu modules
+- DTO validation and a global HTTP exception filter
 
-### 2. Layered Separation
-Each module follows a simple pattern:
-- Controller: handles HTTP requests and validation
-- Service: contains business logic
-- Schema/DTO: defines persistence structure and input validation
-- Module: wires dependencies together
+## Requirements
 
-This separation helps keep the codebase clean and easier to test.
+- Node.js 20+ recommended
+- MongoDB 6+ configured as a **replica set**
+- npm
 
-### 3. Database Strategy
-MongoDB is used as the persistence layer with Mongoose.
+MongoDB transactions are required for safe refresh-token rotation, logout, and logout-all. A standalone MongoDB server is not sufficient.
 
-The project uses:
-- Mongoose schemas for data modeling
-- ObjectId references between modules where appropriate
-- Denormalized structures where reads are frequent, such as menu ancestry
+For local development, start a single-node replica set:
 
-## Menu Module Architecture
-
-The menu system is a hierarchical tree structure built for fast reads and clear hierarchy management.
-
-### Menu Structure
-Menus follow this hierarchy:
-
-```text
-TAB
-  └── SECTION
-        └── SUBSECTION
-              └── PAGE
+```bash
+mongod --dbpath ./data --replSet rs0
 ```
 
-### Why this design works
-- `parentId` is used for relational integrity and parent-child validation
-- `ancestors` is stored to avoid recursive queries and speed up UI rendering
-- The tree is built in memory after fetching the collection, which is efficient for read-heavy use cases
+Then, in `mongosh`:
 
-### Menu Rules
-- Only `TAB` items can be created at the root level
-- Parent-child type rules are enforced
-- Each parent can have unique titles and orders
-- Slugs are unique globally
-- The system supports custom icons for visual rendering
+```javascript
+rs.initiate()
+```
 
-## Authentication and Authorization Flow
+Use a replica-set URI in `.env`:
 
-### Authentication
-The auth flow uses:
-- DTO validation for input payloads
-- bcrypt for password hashing
-- JWT for stateless authentication
-- Passport + JWT strategy for request authentication
+```env
+MONGODB_URI=mongodb://127.0.0.1:27017/user-management-nestjs?replicaSet=rs0
+```
 
-### Authorization
-Roles are evaluated through a guard-based access pattern:
-- `JwtAuthGuard` validates the token
-- `AdminGuard` checks whether the authenticated role is authorized as an admin
+## Quick start
 
-This makes the security layer consistent and easy to apply across routes.
+```bash
+git clone <repository-url>
+cd user-management-nestjs
+npm install
+copy .env.example .env
+npm run start:dev
+```
 
-## Role-Based Access Model
+Windows PowerShell users can use:
 
-The project uses a role-driven permission model:
-- Users belong to a role
-- Roles can be assigned a set of menu entries
-- Menus can be used to drive UI navigation and access control
-- Roles are designed to be extended toward more fine-grained privileges later
+```powershell
+Copy-Item .env.example .env
+npm.cmd run start:dev
+```
 
-This makes the system flexible for dashboards, admin panels, and multi-tenant-style authorization scenarios.
+The API starts on `http://localhost:3000` unless `PORT` is changed.
 
-## Validation and Error Handling
+## Environment variables
 
-The application uses:
-- DTO validation with `class-validator`
-- Global validation pipes
-- Structured exception handling for consistent API responses
+Create a `.env` file in the project root.
 
-This improves reliability and makes client-side error handling easier.
+```env
+PORT=3000
+MONGODB_URI=mongodb://127.0.0.1:27017/user-management-nestjs?replicaSet=rs0
 
-## Recommended Project Flow
+# Use a long, random value. Do not commit this value.
+JWT_SECRET=replace-with-a-long-random-secret
+JWT_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
 
-### For creating a new feature
-1. Create the schema/model
-2. Add DTOs for input validation
-3. Implement the service with business logic
-4. Expose routes through the controller
-5. Register the feature module in the app module
-6. Add any required guards or middleware
+# Optional; defaults to 10.
+BCRYPT_SALT_ROUNDS=10
+```
 
-## Best Practices Used Here
-- Keep controllers thin
-- Put business logic in services
-- Validate inputs at DTO level
-- Keep modules focused on a single responsibility
-- Use environment-based configuration for secrets and DB URLs
-- Prefer explicit, readable types over over-complex abstractions
+Generate a suitable development secret with:
 
-## Suggested Next Improvements
-- Add refresh-token support
-- Add audit logging for user actions
-- Add more granular privilege checks per endpoint
-- Add pagination and filtering for large collections
-- Add unit/integration tests for auth, roles, and menu workflows
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+```
 
-## Summary
-This project is structured as a clean NestJS modular backend for user management. The menu module demonstrates a strong pattern for hierarchical data, while the auth, user, and role modules provide the base for secure, permission-aware application behavior.
+## Authentication architecture
+
+```text
+Browser / client
+    │
+    ├─ access token in Authorization: Bearer <token>
+    │      │
+    │      └─ JwtAuthGuard → Passport JWT strategy → protected endpoint
+    │
+    └─ refresh token in httpOnly cookie
+           │
+           └─ /auth/refresh → signature + session validation + rotation
+                                      │
+                                      └─ MongoDB refresh_tokens collection
+```
+
+### Access token
+
+The access token is returned in the login/refresh response body and should be sent on protected requests:
+
+```http
+Authorization: Bearer <access-token>
+```
+
+It includes:
+
+```json
+{
+  "sub": "user-id",
+  "email": "user@example.com",
+  "role": "role-id",
+  "timezone": "Asia/Karachi"
+}
+```
+
+Its default lifetime is 15 minutes.
+
+### Refresh token
+
+The refresh token is never returned in the JSON response. It is sent as the `refreshToken` `httpOnly` cookie and contains:
+
+```json
+{
+  "sub": "user-id",
+  "type": "refresh",
+  "jti": "unique-token-id"
+}
+```
+
+Its default lifetime is 7 days. The raw token is not stored in MongoDB.
+
+### Refresh-token session document
+
+Each session in the `refresh_tokens` collection contains:
+
+| Field | Purpose |
+| --- | --- |
+| `userId` | Owner of the session |
+| `tokenHash` | bcrypt hash of the refresh token; excluded from normal queries |
+| `jti` | Unique ID from the refresh JWT |
+| `familyId` | Links all rotated tokens from the same original login |
+| `expiresAt` | Session expiry; MongoDB TTL index cleans it up |
+| `revokedAt` / `revokedReason` | Server-side invalidation audit fields |
+
+## Authentication flows
+
+### 1. Login
+
+```text
+POST /auth/login
+  → verify email and bcrypt password
+  → issue access token
+  → issue refresh token with a new jti
+  → store bcrypt hash, jti, familyId, and expiry in MongoDB
+  → set refreshToken httpOnly cookie
+  → return access token and user
+```
+
+### 2. Refresh-token rotation
+
+```text
+POST /auth/refresh
+  → read refreshToken cookie
+  → verify JWT signature, expiry, type, and jti
+  → verify active user status
+  → load matching MongoDB session and compare bcrypt hash
+  → transactionally revoke presented session as "rotated"
+  → create a replacement session in the same token family
+  → set replacement refresh-token cookie
+  → return a new access token
+```
+
+### 3. Replay detection
+
+If a refresh token that has already been rotated is presented again, it is treated as a possible stolen-token replay. All active refresh sessions in that token family are revoked with reason `replay-detected`. The client must log in again.
+
+Clients should send only one refresh request at a time. Concurrent refresh requests can trigger the same replay protection and sign the device out.
+
+### 4. Logout current device
+
+```text
+POST /auth/logout
+  → verify the refresh-token cookie when present
+  → revoke the active session family for that device
+  → clear the refreshToken cookie
+```
+
+The route is idempotent: clearing an absent, expired, or invalid cookie still succeeds.
+
+### 5. Logout from all devices
+
+```text
+POST /auth/logout-all
+Authorization: Bearer <access-token>
+  → revoke all active refresh sessions for the authenticated user
+  → clear the current browser cookie
+```
+
+Existing access tokens remain valid until their short expiry. This is expected for stateless access tokens.
+
+## Auth API reference
+
+### `POST /auth/signup`
+
+```json
+{
+  "email": "user@example.com",
+  "password": "Password@123"
+}
+```
+
+Password requirements are enforced by `SignupDto`.
+
+> The current `Users` schema requires a role. For a plug-and-play application, seed a default role and assign it during signup, or create users through the admin user-management endpoint. Do not expose public signup until the default-role policy is defined.
+
+### `POST /auth/login`
+
+```json
+{
+  "email": "user@example.com",
+  "password": "Password@123",
+  "timezone": "Asia/Karachi"
+}
+```
+
+Response:
+
+```json
+{
+  "user": { "...": "..." },
+  "accessToken": "eyJ..."
+}
+```
+
+The response also sets the `refreshToken` cookie.
+
+### `POST /auth/refresh`
+
+No JSON body is required. The browser must send the refresh cookie.
+
+Response:
+
+```json
+{
+  "accessToken": "eyJ..."
+}
+```
+
+### `POST /auth/logout`
+
+No request body is required. Clears and revokes the current device refresh session.
+
+### `POST /auth/logout-all`
+
+Requires a valid access token:
+
+```http
+Authorization: Bearer <access-token>
+```
+
+## Using authentication in a new module
+
+Inject no authentication service into ordinary protected controllers. Apply the guard instead:
+
+```ts
+import { Controller, Get, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt.authguard';
+
+@Controller('reports')
+export class ReportsController {
+  @Get()
+  @UseGuards(JwtAuthGuard)
+  findAll() {
+    return [];
+  }
+}
+```
+
+After `JwtAuthGuard`, `request.user` contains:
+
+```ts
+{
+  userId: string;
+  email: string;
+  role: string;
+  timezone: string;
+}
+```
+
+For admin-only endpoints, compose the guards:
+
+```ts
+@UseGuards(JwtAuthGuard, AdminGuard)
+```
+
+`AdminGuard` loads the role from MongoDB and requires `role.isAdmin === true`.
+
+## Client integration guidance
+
+- Store the access token in application memory when possible.
+- Do not store the refresh token in JavaScript storage (`localStorage`, `sessionStorage`, Redux, or Zustand).
+- Send `credentials: 'include'` with browser requests that need the refresh cookie.
+- On an API `401`, make one refresh request, update the access token, then retry the original request once.
+- Serialize refresh calls with a client-side mutex/queue. Do not refresh concurrently.
+- On refresh failure, clear local application state and redirect to login.
+- Call `/auth/logout` when signing out from this browser.
+- Call `/auth/logout-all` after a password change, suspected compromise, or account recovery.
+
+Example using `fetch`:
+
+```ts
+await fetch('http://localhost:3000/auth/refresh', {
+  method: 'POST',
+  credentials: 'include',
+});
+```
+
+## Project structure
+
+```text
+src/
+├── auth/
+│   ├── auth.controller.ts          # Login, refresh, logout endpoints
+│   ├── auth.service.ts             # Authentication orchestration
+│   ├── auth-token.service.ts       # Centralized JWT issuance/verification
+│   ├── refresh-token.service.ts    # Session persistence, rotation, revocation
+│   ├── jwt.strategy.ts             # Bearer access-token Passport strategy
+│   ├── jwt.authguard.ts            # JwtAuthGuard
+│   ├── roles.authguard.ts          # AdminGuard
+│   └── schema/refresh-token.schema.ts
+├── users/
+├── roles/
+├── privelleges/
+├── menu/
+├── labels/
+└── main.ts
+```
+
+## Production checklist
+
+Before exposing this project publicly, complete these environment and policy decisions:
+
+- [ ] Set cookie `secure: true` when using HTTPS in production.
+- [ ] Make cookie `secure`, `sameSite`, `domain`, and `maxAge` environment-driven.
+- [ ] Restrict CORS to explicit frontend origins; do not use unrestricted reflected origins.
+- [ ] Fail startup when `JWT_SECRET` is missing; never rely on the development fallback secret.
+- [ ] Add JWT `issuer` and `audience` configuration and validation.
+- [ ] Reject `inactive` and `banned` users during login, not only token refresh.
+- [ ] Enforce HTTPS and set secure reverse-proxy configuration.
+- [ ] Decide whether cross-site cookies are required. If `SameSite=None` is needed, implement CSRF protection.
+- [ ] Configure monitoring, audit logs, backups, and secret management.
+- [ ] Run MongoDB as a replica set in every environment.
+- [ ] Add integration tests against a real MongoDB replica set.
+
+## Development commands
+
+```bash
+npm run start:dev
+npm run build
+npm test -- --runInBand
+npm run test:e2e
+```
+
+On Windows where PowerShell script execution blocks npm, use `npm.cmd` instead:
+
+```powershell
+npm.cmd run build
+npx.cmd jest --runInBand
+```
+
+## Extension rules for contributors
+
+1. Keep controllers thin; place business logic in services.
+2. Use DTOs and `class-validator` for every external request body.
+3. Protect private routes with `JwtAuthGuard`.
+4. Use `AdminGuard` only where administrator access is genuinely required.
+5. Never return `password`, `tokenHash`, or a raw refresh token in API responses or logs.
+6. Do not bypass `RefreshTokenService` when creating, rotating, or revoking refresh tokens.
+7. Preserve refresh-token transaction boundaries when changing authentication code.
+8. Add focused unit tests and integration tests for every auth-flow change.
+
+## License
+
+Private / project-specific. Update this section if the repository is released publicly.
