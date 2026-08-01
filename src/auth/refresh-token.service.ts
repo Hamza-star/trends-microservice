@@ -12,6 +12,12 @@ import {
   RefreshTokenDocument,
 } from './schema/refresh-token.schema';
 
+export interface RefreshTokenSessionMetadata {
+  ipAddress?: string;
+  userAgent?: string;
+  deviceName?: string;
+}
+
 @Injectable()
 export class RefreshTokenService {
   constructor(
@@ -27,11 +33,13 @@ export class RefreshTokenService {
     jti: string,
     familyId: string,
     expiresAt: Date,
+    metadata: RefreshTokenSessionMetadata = {},
   ): Promise<void> {
     const saltRounds = Number(
       this.configService.get<string>('BCRYPT_SALT_ROUNDS') ?? 10,
     );
     const tokenHash = await bcrypt.hash(refreshToken, saltRounds);
+    const sessionMetadata = this.normalizeMetadata(metadata);
 
     try {
       await this.refreshTokenModel.create({
@@ -40,6 +48,11 @@ export class RefreshTokenService {
         jti,
         familyId,
         expiresAt,
+        ipAddress: sessionMetadata.ipAddress,
+        lastIpAddress: sessionMetadata.ipAddress,
+        userAgent: sessionMetadata.userAgent,
+        deviceName: sessionMetadata.deviceName,
+        lastUsedAt: new Date(),
       });
     } catch (error) {
       throw new InternalServerErrorException(
@@ -57,6 +70,7 @@ export class RefreshTokenService {
       refreshToken: string;
       jti: string;
       expiresAt: Date;
+      metadata: RefreshTokenSessionMetadata;
     },
   ): Promise<void> {
     const databaseSession = await this.connection.startSession();
@@ -124,6 +138,7 @@ export class RefreshTokenService {
           replacement.refreshToken,
           this.getSaltRounds(),
         );
+        const sessionMetadata = this.normalizeMetadata(replacement.metadata);
         await this.refreshTokenModel.create(
           [
             {
@@ -132,6 +147,12 @@ export class RefreshTokenService {
               jti: replacement.jti,
               familyId,
               expiresAt: replacement.expiresAt,
+              ipAddress: session.ipAddress ?? sessionMetadata.ipAddress,
+              lastIpAddress:
+                sessionMetadata.ipAddress ?? session.lastIpAddress,
+              userAgent: sessionMetadata.userAgent ?? session.userAgent,
+              deviceName: sessionMetadata.deviceName ?? session.deviceName,
+              lastUsedAt: now,
             },
           ],
           { session: databaseSession },
@@ -229,5 +250,15 @@ export class RefreshTokenService {
 
   private getSaltRounds(): number {
     return Number(this.configService.get<string>('BCRYPT_SALT_ROUNDS') ?? 10);
+  }
+
+  private normalizeMetadata(
+    metadata: RefreshTokenSessionMetadata,
+  ): RefreshTokenSessionMetadata {
+    return {
+      ipAddress: metadata.ipAddress?.slice(0, 45),
+      userAgent: metadata.userAgent?.slice(0, 512),
+      deviceName: metadata.deviceName?.trim().slice(0, 100),
+    };
   }
 }

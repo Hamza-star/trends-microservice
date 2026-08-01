@@ -30,4 +30,9 @@ export class LoginDto {
   @IsOptional()
   @IsString({ message: 'Timezone must be a string' })
   timezone?: string;
+
+  @IsOptional()
+  @IsString({ message: 'Device name must be a string' })
+  @MaxLength(100, { message: 'Device name must not exceed 100 characters' })
+  deviceName?: string;
 }

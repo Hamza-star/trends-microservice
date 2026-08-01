@@ -148,6 +148,10 @@ Each session in the `refresh_tokens` collection contains:
 | `tokenHash` | bcrypt hash of the refresh token; excluded from normal queries |
 | `jti` | Unique ID from the refresh JWT |
 | `familyId` | Links all rotated tokens from the same original login |
+| `ipAddress` / `lastIpAddress` | First and most recent IP observed for the session family |
+| `userAgent` | Browser/device user-agent reported by the client |
+| `deviceName` | Optional client-supplied label, such as `Chrome on Windows` |
+| `lastUsedAt` | Most recent successful login or refresh time |
 | `expiresAt` | Session expiry; MongoDB TTL index cleans it up |
 | `revokedAt` / `revokedReason` | Server-side invalidation audit fields |
 
@@ -228,7 +232,8 @@ Password requirements are enforced by `SignupDto`.
 {
   "email": "user@example.com",
   "password": "Password@123",
-  "timezone": "Asia/Karachi"
+  "timezone": "Asia/Karachi",
+  "deviceName": "Chrome on Windows"
 }
 ```
 
@@ -314,6 +319,8 @@ For admin-only endpoints, compose the guards:
 - On refresh failure, clear local application state and redirect to login.
 - Call `/auth/logout` when signing out from this browser.
 - Call `/auth/logout-all` after a password change, suspected compromise, or account recovery.
+- Treat device names and user agents as display/audit metadata only; they are client-controlled and not proof of identity.
+- When deploying behind a reverse proxy, configure Express proxy trust correctly so `request.ip` represents the client IP rather than the proxy IP.
 
 Example using `fetch`:
 

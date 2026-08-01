@@ -46,6 +46,11 @@ describe('RefreshTokenService', () => {
           refreshToken: 'replacement-token',
           jti: '9a4f0fbd-e1e5-47ca-aefe-2c4815789e86',
           expiresAt: new Date(Date.now() + 120_000),
+          metadata: {
+            ipAddress: '203.0.113.10',
+            userAgent: 'Test Browser',
+            deviceName: 'Test Device',
+          },
         },
       ),
     ).resolves.toBeUndefined();
@@ -62,6 +67,10 @@ describe('RefreshTokenService', () => {
         expect.objectContaining({
           familyId: 'family-id',
           jti: '9a4f0fbd-e1e5-47ca-aefe-2c4815789e86',
+          ipAddress: '203.0.113.10',
+          lastIpAddress: '203.0.113.10',
+          userAgent: 'Test Browser',
+          deviceName: 'Test Device',
         }),
       ],
       { session: transactionSession },
@@ -106,6 +115,7 @@ describe('RefreshTokenService', () => {
           refreshToken: 'replacement-token',
           jti: '9a4f0fbd-e1e5-47ca-aefe-2c4815789e86',
           expiresAt: new Date(Date.now() + 120_000),
+          metadata: {},
         },
       ),
     ).rejects.toBeInstanceOf(UnauthorizedException);

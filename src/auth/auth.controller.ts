@@ -14,6 +14,7 @@ import { SignupDto, LoginDto } from './dtos/auth.dtos';
 import { Throttle } from '@nestjs/throttler';
 import type { CookieOptions, Request, Response } from 'express';
 import { JwtAuthGuard } from './jwt.authguard';
+import { RefreshTokenSessionMetadata } from './refresh-token.service';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -46,9 +47,15 @@ export class AuthController {
   @Post('login')
   async login(
     @Body() dto: LoginDto,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.authService.login(dto.email, dto.password, dto.timezone);
+    const result = await this.authService.login(
+      dto.email,
+      dto.password,
+      dto.timezone,
+      this.getSessionMetadata(request, dto.deviceName),
+    );
 
     response.cookie('refreshToken', result.refreshToken, this.refreshTokenCookieOptions);
 
@@ -64,7 +71,10 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const refreshToken = request.cookies?.refreshToken;
-    const tokens = await this.authService.refreshTokens(refreshToken);
+    const tokens = await this.authService.refreshTokens(
+      refreshToken,
+      this.getSessionMetadata(request),
+    );
 
     response.cookie('refreshToken', tokens.refreshToken, this.refreshTokenCookieOptions);
 
@@ -111,4 +121,15 @@ export class AuthController {
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: '/',
   };
+
+  private getSessionMetadata(
+    request: Request,
+    deviceName?: string,
+  ): RefreshTokenSessionMetadata {
+    return {
+      ipAddress: request.ip,
+      userAgent: request.get('user-agent') ?? undefined,
+      deviceName,
+    };
+  }
 }

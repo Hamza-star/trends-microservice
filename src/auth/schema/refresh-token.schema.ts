@@ -18,6 +18,21 @@ export class RefreshToken {
   @Prop({ required: true, index: true })
   familyId!: string;
 
+  @Prop({ trim: true, maxlength: 45 })
+  ipAddress?: string;
+
+  @Prop({ trim: true, maxlength: 45 })
+  lastIpAddress?: string;
+
+  @Prop({ trim: true, maxlength: 512 })
+  userAgent?: string;
+
+  @Prop({ trim: true, maxlength: 100 })
+  deviceName?: string;
+
+  @Prop({ default: Date.now, index: true })
+  lastUsedAt!: Date;
+
   @Prop({ required: true })
   expiresAt!: Date;
 

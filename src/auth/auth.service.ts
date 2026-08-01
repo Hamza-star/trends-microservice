@@ -8,7 +8,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
-import { RefreshTokenService } from './refresh-token.service';
+import {
+  RefreshTokenService,
+  RefreshTokenSessionMetadata,
+} from './refresh-token.service';
 import { AuthTokenService } from './auth-token.service';
 
 @Injectable()
@@ -42,7 +45,12 @@ export class AuthService {
     return { message: 'Signup Successfull' };
   }
 
-  async login(email: string, password: string, timezone: string = 'Asia/Karachi') {
+  async login(
+    email: string,
+    password: string,
+    timezone: string = 'Asia/Karachi',
+    metadata: RefreshTokenSessionMetadata = {},
+  ) {
     const user = await this.usersService.findByEmail(email);
     if (!user) {
       throw new BadRequestException('Invalid credentials');
@@ -68,6 +76,7 @@ export class AuthService {
       tokens.refreshTokenId,
       tokens.refreshTokenId,
       tokens.refreshTokenExpiresAt,
+      metadata,
     );
 
     return {
@@ -77,7 +86,10 @@ export class AuthService {
     };
   }
 
-  async refreshTokens(refreshToken: string): Promise<{
+  async refreshTokens(
+    refreshToken: string,
+    metadata: RefreshTokenSessionMetadata = {},
+  ): Promise<{
     accessToken: string;
     refreshToken: string;
   }> {
@@ -125,6 +137,7 @@ export class AuthService {
         refreshToken: tokens.refreshToken,
         jti: tokens.refreshTokenId,
         expiresAt: tokens.refreshTokenExpiresAt,
+        metadata,
       },
     );
 
@@ -167,6 +180,7 @@ export class AuthService {
     jti: string,
     familyId: string,
     expiresAt: Date,
+    metadata: RefreshTokenSessionMetadata,
   ): Promise<void> {
     await this.refreshTokenService.createSession(
       userId,
@@ -174,6 +188,7 @@ export class AuthService {
       jti,
       familyId,
       expiresAt,
+      metadata,
     );
   }
 
