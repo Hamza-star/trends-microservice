@@ -25,24 +25,7 @@ The module uses short-lived access tokens and database-backed, rotating refresh-
 - MongoDB 6+ configured as a **replica set**
 - npm
 
-MongoDB transactions are required for safe refresh-token rotation, logout, and logout-all. A standalone MongoDB server is not sufficient.
 
-For local development, start a single-node replica set:
-
-```bash
-mongod --dbpath ./data --replSet rs0
-```
-
-Then, in `mongosh`:
-
-```javascript
-rs.initiate()
-```
-
-Use a replica-set URI in `.env`:
-
-```env
-MONGODB_URI=mongodb://127.0.0.1:27017/user-management-nestjs?replicaSet=rs0
 ```
 
 ## Quick start
@@ -62,14 +45,14 @@ Copy-Item .env.example .env
 npm.cmd run start:dev
 ```
 
-The API starts on `http://localhost:3000` unless `PORT` is changed.
+The API starts on `http://localhost:5000` unless `PORT` is changed.
 
 ## Environment variables
 
 Create a `.env` file in the project root.
 
 ```env
-PORT=3000
+PORT=5000
 MONGODB_URI=mongodb://127.0.0.1:27017/user-management-nestjs?replicaSet=rs0
 
 # Use a long, random value. Do not commit this value.
@@ -325,7 +308,7 @@ For admin-only endpoints, compose the guards:
 Example using `fetch`:
 
 ```ts
-await fetch('http://localhost:3000/auth/refresh', {
+await fetch('http://localhost:5000/auth/refresh', {
   method: 'POST',
   credentials: 'include',
 });
