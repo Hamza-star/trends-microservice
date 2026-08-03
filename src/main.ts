@@ -8,7 +8,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 export async function bootstrap() {
   try {
     const app = await NestFactory.create<NestExpressApplication>(AppModule);
-    
+
     app.use(cookieParser());
     app.useGlobalPipes(
       new ValidationPipe({
@@ -19,7 +19,7 @@ export async function bootstrap() {
     );
     app.useGlobalFilters(new HttpExceptionFilter());
     app.enableCors({
-      origin: true,
+      origin: process.env.FRONTEND_URL,
       credentials: true,
     });
     app.set('trust proxy', true);
