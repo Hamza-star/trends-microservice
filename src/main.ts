@@ -3,10 +3,12 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import cookieParser from 'cookie-parser';
+import { NestExpressApplication } from '@nestjs/platform-express';
 
 export async function bootstrap() {
   try {
-    const app = await NestFactory.create(AppModule);
+    const app = await NestFactory.create<NestExpressApplication>(AppModule);
+    
     app.use(cookieParser());
     app.useGlobalPipes(
       new ValidationPipe({
@@ -20,7 +22,8 @@ export async function bootstrap() {
       origin: true,
       credentials: true,
     });
-    await app.listen(process.env.PORT ?? 3000);
+    app.set('trust proxy', true);
+    await app.listen(process.env.PORT ?? 5000);
     return app;
   } catch (error) {
     console.error('Failed to start application:', error);
