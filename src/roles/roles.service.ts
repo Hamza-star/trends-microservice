@@ -143,117 +143,135 @@ export class RolesService {
     return role;
   }
 
-  async getAllRoles() {
-    try {
-      const roles = await this.rolesModel
-        .find()
-        .populate<{ menuIds: any[] }>('menuIds')
-        .lean();
+ async getAllRoles() {
+  try {
+    const roles = await this.rolesModel
+      .find()
+      .populate<{ menuIds: any[] }>('menuIds')
+      .lean();
 
-      if (!roles || roles.length === 0) {
-        return [];
-      }
+    if (!roles || roles.length === 0) {
+      return [];
+    }
 
-      const result: any[] = [];
+    // 1. Build a global menu cache from all populated (assigned) menus first
+    const menuCache = new Map<string, any>();
+    const missingAncestorIds = new Set<string>();
 
-      for (const role of roles) {
-        // Collect all menu IDs including ancestors
-        const allMenuIds = new Set<string>();
-        const allMenus: any[] = [];
+    for (const role of roles) {
+      if (!role.menuIds || !Array.isArray(role.menuIds)) continue;
 
-        if (role.menuIds && Array.isArray(role.menuIds)) {
-          // First, add all assigned menus
-          for (const menu of role.menuIds) {
-            allMenuIds.add(menu._id.toString());
-            allMenus.push(menu);
+      for (const menu of role.menuIds) {
+        const id = menu._id.toString();
+        if (!menuCache.has(id)) {
+          menuCache.set(id, menu);
+        }
 
-            // Fetch and add all ancestors of this menu
-            if (menu.ancestors && Array.isArray(menu.ancestors)) {
-              for (const ancestorId of menu.ancestors) {
-                if (!allMenuIds.has(ancestorId.toString())) {
-                  const ancestorMenu = await this.menuModel
-                    .findById(ancestorId)
-                    .lean();
-                  if (ancestorMenu) {
-                    allMenuIds.add(ancestorId.toString());
-                    allMenus.push(ancestorMenu);
-                  }
-                }
-              }
+        if (menu.ancestors && Array.isArray(menu.ancestors)) {
+          for (const ancestorId of menu.ancestors) {
+            const aId = ancestorId.toString();
+            if (!menuCache.has(aId)) {
+              missingAncestorIds.add(aId);
             }
           }
         }
+      }
+    }
 
-        // Now build tree structure from all collected menus
-        let menuTree: any[] = [];
+    // 2. Fetch ALL missing ancestors in a single query instead of one-by-one
+    if (missingAncestorIds.size > 0) {
+      const ancestorMenus = await this.menuModel
+        .find({ _id: { $in: Array.from(missingAncestorIds) } })
+        .lean();
 
-        if (allMenus.length > 0) {
-          const map = new Map();
+      for (const menu of ancestorMenus) {
+        menuCache.set(menu._id.toString(), menu);
+      }
+    }
 
-          // Store all menus in map
-          allMenus.forEach((menu: any) => {
-            const cleanMenu = {
-              _id: menu._id,
-              title: menu.title,
-              slug: menu.slug,
-              type: menu.type,
-              parentId: menu.parentId,
-              ancestors: menu.ancestors,
-              isActive: menu.isActive,
-              order: menu.order,
-              children: [],
-            };
-            map.set(menu._id.toString(), cleanMenu);
-          });
+    // 3. Helper: build tree for a given list of menu ids (assigned + ancestors)
+    const sortByOrder = (items: any[]) =>
+      items.sort((a, b) => (a.order || 0) - (b.order || 0));
 
-          // Build tree structure
-          allMenus.forEach((menu: any) => {
-            const menuNode = map.get(menu._id.toString());
-            if (!menu.parentId) {
-              menuTree.push(menuNode);
-            } else {
-              const parent = map.get(menu.parentId.toString());
-              if (parent) {
-                parent.children.push(menuNode);
-              } else {
-                menuTree.push(menuNode);
-              }
-            }
-          });
-
-          // Sort by order
-          const sortByOrder = (items: any[]) => {
-            return items.sort((a, b) => (a.order || 0) - (b.order || 0));
-          };
-
-          let sortedTree = sortByOrder(menuTree);
-
-          const sortChildrenRecursively = (items: any[]) => {
-            items.forEach((item: any) => {
-              if (item.children && item.children.length > 0) {
-                item.children = sortByOrder(item.children);
-                sortChildrenRecursively(item.children);
-              }
-            });
-          };
-
-          sortChildrenRecursively(sortedTree);
-          menuTree = sortedTree;
+    const sortChildrenRecursively = (items: any[]) => {
+      for (const item of items) {
+        if (item.children && item.children.length > 0) {
+          item.children = sortByOrder(item.children);
+          sortChildrenRecursively(item.children);
         }
+      }
+    };
 
-        result.push({
-          _id: role._id,
-          name: role.name,
-          menus: menuTree,
+    const buildMenuTree = (allMenuIds: Set<string>) => {
+      const map = new Map<string, any>();
+
+      for (const id of allMenuIds) {
+        const menu = menuCache.get(id);
+        if (!menu) continue;
+        map.set(id, {
+          _id: menu._id,
+          title: menu.title,
+          slug: menu.slug,
+          type: menu.type,
+          parentId: menu.parentId,
+          ancestors: menu.ancestors,
+          isActive: menu.isActive,
+          order: menu.order,
+          children: [],
         });
       }
 
-      return result;
-    } catch (error) {
-      console.error('Error in getAllRoles:', error);
-      throw new Error(`Failed to get roles: ${error.message}`);
-    }
+      let tree: any[] = [];
+      for (const id of allMenuIds) {
+        const node = map.get(id);
+        if (!node) continue;
+        const menu = menuCache.get(id);
+        if (!menu.parentId) {
+          tree.push(node);
+        } else {
+          const parent = map.get(menu.parentId.toString());
+          if (parent) {
+            parent.children.push(node);
+          } else {
+            tree.push(node);
+          }
+        }
+      }
+
+      tree = sortByOrder(tree);
+      sortChildrenRecursively(tree);
+      return tree;
+    };
+
+    // 4. Build result per role using only the cache (no DB calls here)
+    const result = roles.map((role) => {
+      const allMenuIds = new Set<string>();
+
+      if (role.menuIds && Array.isArray(role.menuIds)) {
+        for (const menu of role.menuIds) {
+          const id = menu._id.toString();
+          allMenuIds.add(id);
+          if (menu.ancestors && Array.isArray(menu.ancestors)) {
+            for (const ancestorId of menu.ancestors) {
+              allMenuIds.add(ancestorId.toString());
+            }
+          }
+        }
+      }
+
+      return {
+        _id: role._id,
+        name: role.name,
+        menus: allMenuIds.size > 0 ? buildMenuTree(allMenuIds) : [],
+      };
+    });
+
+    return result;
+  } catch (error) {
+    console.error('Error in getAllRoles:', error);
+    throw new Error(`Failed to get roles: ${error.message}`);
   }
+}
 
   async getRoleByIdAndUpdate(
     id: string,
