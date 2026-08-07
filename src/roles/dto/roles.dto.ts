@@ -1,4 +1,4 @@
-import { IsArray, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsArray, IsMongoId, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class AddRolesDto {
   @IsString()
@@ -10,6 +10,11 @@ export class AddRolesDto {
   @IsArray()
   @IsString({ each: true })
   permissions?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  menuIds?: string[];
 }
 
 export class UpdateRolesDto {
@@ -22,4 +27,9 @@ export class UpdateRolesDto {
   @IsArray()
   @IsString({ each: true })
   permissions?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  menuIds?: string[];
 }

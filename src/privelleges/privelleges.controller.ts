@@ -42,6 +42,23 @@ export class PrivellegesController {
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('permissions.read')
+  @Get('allpermissions')
+  async getAllPermissions(): Promise<string[]> {
+    return [
+      'roles.manage',
+      'users.manage',
+      'users.read',
+      'menu.manage',
+      'menu.read',
+      'labels.manage',
+      'labels.read',
+      'permissions.manage',
+      'permissions.read',
+    ];
+  }
+
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @RequirePermissions('permissions.manage')
   @Put('updateprivelleges/:id')
   async updatePrivelleges(

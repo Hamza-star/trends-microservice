@@ -41,13 +41,19 @@ export class RolesController {
   async createRole(@Body() payload: AddRolesDto, @Req() req: AuthenticatedRequest) {
     const name = payload.name;
     const permissions = payload.permissions ?? [];
+    const menuIds = payload.menuIds ?? [];
 
     if (!name) {
       throw new BadRequestException('name is required');
     }
 
     try {
-      const role = await this.rolesService.createRoleWithPermissions(name, permissions, req.user);
+      const role = await this.rolesService.createRoleWithPermissions(
+        name,
+        permissions,
+        req.user,
+        menuIds,
+      );
       return {
         message: 'Role created successfully',
         data: role,
@@ -73,6 +79,7 @@ export class RolesController {
       payload.name,
       payload.permissions,
       req.user,
+      payload.menuIds,
     );
   }
 

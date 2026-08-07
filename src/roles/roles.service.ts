@@ -36,6 +36,7 @@ export class RolesService {
     name: string,
     permissions: string[],
     currentUser?: { userId?: string; role?: string },
+    menuIds?: string[],
   ): Promise<Roles> {
     const existingRole = await this.rolesModel.findOne({
       name: { $regex: new RegExp(`^${name}$`, 'i') },
@@ -63,9 +64,12 @@ export class RolesService {
       }
     }
 
+    const normalizedMenuIds = [...new Set((menuIds ?? []).filter(Boolean))].map((menuId) => new Types.ObjectId(menuId));
+
     const newRole = new this.rolesModel({
       name,
       permissions: normalizedPermissions,
+      menuIds: normalizedMenuIds,
       createdBy: currentUser?.userId ? new Types.ObjectId(currentUser.userId) : undefined,
     });
 
@@ -77,6 +81,7 @@ export class RolesService {
     name?: string,
     permissions?: string[],
     currentUser?: { userId?: string; role?: string },
+    menuIds?: string[],
   ): Promise<{ message: string; data?: any }> {
     const role = await this.rolesModel.findById(id);
 
@@ -119,6 +124,10 @@ export class RolesService {
       }
 
       updateData.permissions = normalizedPermissions;
+    }
+
+    if (menuIds !== undefined) {
+      updateData.menuIds = [...new Set((menuIds ?? []).filter(Boolean))].map((menuId) => new Types.ObjectId(menuId));
     }
 
     const updatedRole = await this.rolesModel.findByIdAndUpdate(id, updateData, { new: true }).exec();
