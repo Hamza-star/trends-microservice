@@ -15,9 +15,8 @@ import { PrivellegesService } from './privelleges.service';
 import { Privelleges } from './schema/privelleges.schema';
 import { AddPrivellegesDto } from './dto/privelleges.dto';
 import { UpdatePrivellegesDto } from './dto/privelleges.dto'; // Import update DTO
-import { JwtAuthGuard } from 'src/auth/jwt.authguard';
-import { AdminGuard } from 'src/auth/roles.authguard';
-
+import { JwtAuthGuard } from '../auth/jwt.authguard';
+import { AdminGuard } from '../auth/roles.authguard';
 @Controller('privelleges')
 @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
 export class PrivellegesController {

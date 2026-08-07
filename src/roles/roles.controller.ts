@@ -17,16 +17,17 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { RolesService } from './roles.service';
-import { JwtAuthGuard } from 'src/auth/jwt.authguard';
-import { AdminGuard } from 'src/auth/roles.authguard';
+
 import { AddRolesDto, UpdateRolesDto } from './dto/roles.dto';
+import { JwtAuthGuard } from '../auth/jwt.authguard';
+import { AdminGuard } from '../auth/roles.authguard';
 
 @Controller('roles')
 @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Post('addrole')
   async createRole(@Body() payload: AddRolesDto) {
     const name = payload.name;
@@ -53,8 +54,6 @@ export class RolesController {
     }
   }
 
- 
-
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Put('updaterole/:id')
   async updateRole(@Param('id') id: string, @Body() payload: UpdateRolesDto) {
@@ -68,7 +67,7 @@ export class RolesController {
     return await this.rolesService.updateRoleWithMenus(id, name ?? '', menuIds);
   }
 
- 
+ @UseGuards(JwtAuthGuard, AdminGuard)
   @Get('allrole')
   async getAllRoles(): Promise<any> {
     // Add :Promise<any> return type
@@ -78,8 +77,6 @@ export class RolesController {
       data: roles,
     };
   }
-
-
 
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Delete('deleterole/:id')
@@ -103,7 +100,7 @@ export class RolesController {
   }
 
   @Patch(':id/admin-status')
-  // @UseGuards(AdminGuard) // Only existing admins can make others admin
+  @UseGuards(AdminGuard) // Only existing admins can make others admin
   async toggleAdminStatus(
     @Param('id') id: string,
     @Body('isAdmin') isAdmin: boolean,

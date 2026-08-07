@@ -9,16 +9,20 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { LabelsService } from './labels.service';
 import { CreateLabelDto } from './dto/create-label.dto';
 import { UpdateLabelDto } from './dto/update-label.dto';
+import { JwtAuthGuard } from '../auth/jwt.authguard';
+import { AdminGuard } from '../auth/roles.authguard';
 
 @Controller('labels')
 export class LabelsController {
   constructor(private readonly labelsService: LabelsService) {}
 
   // Create single label
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createLabelDto: CreateLabelDto) {
@@ -26,6 +30,7 @@ export class LabelsController {
   }
 
   // Create multiple labels
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Post('bulk')
   @HttpCode(HttpStatus.CREATED)
   async createMany(@Body() createLabelDtos: CreateLabelDto[]) {
@@ -33,24 +38,28 @@ export class LabelsController {
   }
 
   // Get all labels
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Get()
   async findAll() {
     return await this.labelsService.findAll();
   }
 
   // Get label by key
+  @UseGuards(JwtAuthGuard, AdminGuard)  
   @Get('key/:key')
   async findByKey(@Param('key') key: string) {
     return await this.labelsService.findByKey(key);
   }
 
   // Get label by id
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Get('id/:id')
   async findById(@Param('id') id: string) {
     return await this.labelsService.findById(id);
   }
 
   // Get multiple labels by keys (query params: ?keys=key1,key2,key3)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Get('bulk/keys')
   async findByKeys(@Query('keys') keys: string) {
     const keysArray = keys ? keys.split(',') : [];
@@ -58,6 +67,7 @@ export class LabelsController {
   }
 
   // Get multiple labels by ids (query params: ?ids=id1,id2,id3)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Get('bulk/ids')
   async findByIds(@Query('ids') ids: string) {
     const idsArray = ids ? ids.split(',') : [];
@@ -65,6 +75,7 @@ export class LabelsController {
   }
 
   // Update label by key
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Put('key/:key')
   async updateByKey(
     @Param('key') key: string,
@@ -74,6 +85,7 @@ export class LabelsController {
   }
 
   // Update label by id
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Put('id/:id')
   async updateById(
     @Param('id') id: string,
@@ -83,18 +95,21 @@ export class LabelsController {
   }
 
   // Delete label by key
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Delete('key/:key')
   async deleteByKey(@Param('key') key: string) {
     return await this.labelsService.deleteByKey(key);
   }
 
   // Delete label by id
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Delete('id/:id')
   async deleteById(@Param('id') id: string) {
     return await this.labelsService.deleteById(id);
   }
 
   // Delete multiple labels by keys
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Delete('bulk/keys')
   @HttpCode(HttpStatus.OK)
   async deleteManyByKeys(@Body('keys') keys: string[]) {
@@ -102,6 +117,7 @@ export class LabelsController {
   }
 
   // Delete multiple labels by ids
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Delete('bulk/ids')
   @HttpCode(HttpStatus.OK)
   async deleteManyByIds(@Body('ids') ids: string[]) {

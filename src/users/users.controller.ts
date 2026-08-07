@@ -33,12 +33,12 @@ interface AuthenticatedRequest extends Request {
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Post('addUser')
   async addUser(@Body() body: AddUserDto): Promise<Users> {
     return this.usersService.addUser(body.name, body.email, body.password, body.roleId);
   }
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Get('myprofile')
   getMyProfile(@Req() req: AuthenticatedRequest) {
     const user = req.user;

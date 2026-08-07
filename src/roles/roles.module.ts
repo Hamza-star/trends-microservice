@@ -6,6 +6,7 @@ import { RolesSchema } from './schema/roles.schema';
 import { UsersModule } from '../users/users.module'; // Import UsersModule
 import { PrivellegesSchema } from 'src/privelleges/schema/privelleges.schema';
 import { MenuSchema } from 'src/menu/schema/menu.schema';
+import { AdminGuard } from '../auth/roles.authguard';
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -26,7 +27,7 @@ import { MenuSchema } from 'src/menu/schema/menu.schema';
     forwardRef(() => UsersModule),
   ],
   controllers: [RolesController],
-  providers: [RolesService],
-  exports: [MongooseModule, RolesService],
+  providers: [RolesService, AdminGuard],
+  exports: [MongooseModule, RolesService, AdminGuard],
 })
 export class RolesModule {}

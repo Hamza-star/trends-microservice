@@ -12,8 +12,9 @@ import { MenuService, type MenuTreeNode } from './menu.service';
 import { CreateMenuDto } from './schema/dto/create-menu.dto';
 import { UpdateMenuDto } from './schema/dto/update-menu.dto';
 import { Menu } from './schema/menu.schema';
-import { JwtAuthGuard } from 'src/auth/jwt.authguard';
-import { AdminGuard } from 'src/auth/roles.authguard';
+import { JwtAuthGuard } from '../auth/jwt.authguard';
+import { AdminGuard } from '../auth/roles.authguard';
+
 
 @Controller('menu')
 export class MenuController {
