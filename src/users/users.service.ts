@@ -13,10 +13,50 @@ import { Roles, RolesDocument } from '../roles/schema/roles.schema';
 import * as bcrypt from 'bcrypt';
 import { PrivellegesDocument } from 'src/privelleges/schema/privelleges.schema';
 
+interface RoleAssignmentContext {
+  userId?: string;
+  role?: string;
+}
+
 @Injectable()
 export class UsersService {
-  async registerUser(email: string, hashedPassword: string): Promise<Users> {
-    const newUser = new this.userModel({ email, password: hashedPassword });
+  async resolveDefaultRoleId(): Promise<string | undefined> {
+    const superAdminRole = await this.roleModel
+      .findOne({ name: { $regex: new RegExp('^SUPER_ADMIN$', 'i') } })
+      .select('_id')
+      .lean()
+      .exec();
+
+    if (superAdminRole?._id) {
+      return superAdminRole._id.toString();
+    }
+
+    const fallbackRole = await this.roleModel.findOne().select('_id').lean().exec();
+    return fallbackRole?._id?.toString();
+  }
+
+  async registerUser(email: string, hashedPassword: string, roleId?: string): Promise<Users> {
+    const resolvedRoleId = roleId ?? (await this.resolveDefaultRoleId());
+
+    if (!resolvedRoleId) {
+      throw new BadRequestException('No role available for user registration');
+    }
+
+    if (!Types.ObjectId.isValid(resolvedRoleId)) {
+      throw new BadRequestException('Invalid role ID format');
+    }
+
+    const roleExists = await this.roleModel.exists({ _id: resolvedRoleId });
+    if (!roleExists) {
+      throw new BadRequestException('Assigned role does not exist');
+    }
+
+    const newUser = new this.userModel({
+      email,
+      password: hashedPassword,
+      role: new Types.ObjectId(resolvedRoleId),
+    });
+
     return newUser.save();
   }
   constructor(
@@ -31,7 +71,8 @@ export class UsersService {
     name: string,
     email: string,
     password: string,
-    roleId: string, // changed from roleName to roleId
+    roleId: string,
+    currentUser?: RoleAssignmentContext,
   ): Promise<Users> {
     // Check if user already exists
     const existingUser = await this.userModel.findOne({ email });
@@ -44,13 +85,22 @@ export class UsersService {
       throw new BadRequestException('Invalid role ID format');
     }
 
-    // Check if role exists
     const role = await this.roleModel.findById(roleId);
     if (!role) {
       throw new BadRequestException('Role not found');
     }
 
-    // Hash password
+    if (currentUser?.role) {
+      const actorRole = await this.roleModel.findById(currentUser.role);
+      const actorPermissions = Array.isArray(actorRole?.permissions) ? actorRole.permissions : [];
+      const rolePermissions = Array.isArray(role.permissions) ? role.permissions : [];
+      const isAllowed = rolePermissions.every((permission) => actorPermissions.includes(permission));
+
+      if (!isAllowed && actorRole?.name !== 'SUPER_ADMIN') {
+        throw new BadRequestException('You cannot assign a role with permissions you do not possess.');
+      }
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create and save user
@@ -69,9 +119,6 @@ export class UsersService {
       .find()
       .populate({
         path: 'role',
-        populate: {
-          path: 'privelleges', // populate inside role
-        },
       })
       .exec();
 
@@ -293,7 +340,6 @@ export class UsersService {
       .findById(id)
       .populate({
         path: 'role',
-        // Remove privelleges populate
       })
       .exec();
 
@@ -455,7 +501,8 @@ export class UsersService {
 
   async updateUser(
     id: string,
-    updates: Partial<Users> & { roleId?: string }, // roleId optional
+    updates: Partial<Users> & { roleId?: string },
+    currentUser?: RoleAssignmentContext,
   ): Promise<{ message: string }> {
     if (updates.password) {
       updates.password = await bcrypt.hash(updates.password, 10);
@@ -473,7 +520,17 @@ export class UsersService {
         throw new BadRequestException('Role does not exist');
       }
 
-      // map roleId to role field
+      if (currentUser?.role) {
+        const actorRole = await this.roleModel.findById(currentUser.role);
+        const actorPermissions = Array.isArray(actorRole?.permissions) ? actorRole.permissions : [];
+        const rolePermissions = Array.isArray(role.permissions) ? role.permissions : [];
+        const isAllowed = rolePermissions.every((permission) => actorPermissions.includes(permission));
+
+        if (!isAllowed && actorRole?.name !== 'SUPER_ADMIN') {
+          throw new BadRequestException('You cannot assign a role with permissions you do not possess.');
+        }
+      }
+
       updates.role = new Types.ObjectId(updates.roleId);
 
       // remove roleId from updates to avoid unknown field

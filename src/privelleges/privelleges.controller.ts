@@ -14,15 +14,18 @@ import {
 import { PrivellegesService } from './privelleges.service';
 import { Privelleges } from './schema/privelleges.schema';
 import { AddPrivellegesDto } from './dto/privelleges.dto';
-import { UpdatePrivellegesDto } from './dto/privelleges.dto'; // Import update DTO
+import { UpdatePrivellegesDto } from './dto/privelleges.dto';
 import { JwtAuthGuard } from '../auth/jwt.authguard';
 import { AdminGuard } from '../auth/roles.authguard';
+import { RequirePermissions } from '../auth/permissions.decorator';
+
 @Controller('privelleges')
 @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
 export class PrivellegesController {
   constructor(private readonly privellegesService: PrivellegesService) {}
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('permissions.manage')
   @Post('addprivelleges')
   async addPrivelleges(@Body() dto: AddPrivellegesDto): Promise<Privelleges> {
     if (!dto.name) {
@@ -32,12 +35,14 @@ export class PrivellegesController {
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('permissions.read')
   @Get('allprivelleges')
   async getAllPrivelleges(): Promise<Privelleges[]> {
     return this.privellegesService.getAllPrivelleges();
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('permissions.manage')
   @Put('updateprivelleges/:id')
   async updatePrivelleges(
     @Param('id') id: string,
@@ -53,6 +58,7 @@ export class PrivellegesController {
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('permissions.manage')
   @Delete('deleteprivelleges/:id')
   async deletePrivelleges(
     @Param('id') id: string,

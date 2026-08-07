@@ -12,15 +12,23 @@ import {
   HttpStatus,
   BadRequestException,
   UseGuards,
-  Patch,
   UsePipes,
   ValidationPipe,
+  Req,
 } from '@nestjs/common';
 import { RolesService } from './roles.service';
-
 import { AddRolesDto, UpdateRolesDto } from './dto/roles.dto';
 import { JwtAuthGuard } from '../auth/jwt.authguard';
 import { AdminGuard } from '../auth/roles.authguard';
+import { RequirePermissions } from '../auth/permissions.decorator';
+import type { Request } from 'express';
+
+interface AuthenticatedRequest extends Request {
+  user?: {
+    userId?: string;
+    role?: string;
+  };
+}
 
 @Controller('roles')
 @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
@@ -28,49 +36,50 @@ export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('roles.manage')
   @Post('addrole')
-  async createRole(@Body() payload: AddRolesDto) {
+  async createRole(@Body() payload: AddRolesDto, @Req() req: AuthenticatedRequest) {
     const name = payload.name;
-    const menuIds = payload.menuIds ?? [];
+    const permissions = payload.permissions ?? [];
 
     if (!name) {
       throw new BadRequestException('name is required');
     }
 
     try {
-      const role = await this.rolesService.createRoleWithMenus(name, menuIds);
+      const role = await this.rolesService.createRoleWithPermissions(name, permissions, req.user);
       return {
         message: 'Role created successfully',
         data: role,
       };
     } catch (error: unknown) {
       if (error instanceof Error && 'code' in error && error.code === 11000) {
-        // MongoDB duplicate key error
-        throw new BadRequestException(
-          `Role with name '${name}' already exists`,
-        );
+        throw new BadRequestException(`Role with name '${name}' already exists`);
       }
       throw error;
     }
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('roles.manage')
   @Put('updaterole/:id')
-  async updateRole(@Param('id') id: string, @Body() payload: UpdateRolesDto) {
-    const name = payload.name;
-    const menuIds = payload.menuIds ? [...new Set(payload.menuIds)] : undefined;
-
-    if (name !== undefined && !name) {
+  async updateRole(@Param('id') id: string, @Body() payload: UpdateRolesDto, @Req() req: AuthenticatedRequest) {
+    if (payload.name !== undefined && !payload.name) {
       throw new BadRequestException('name is required');
     }
 
-    return await this.rolesService.updateRoleWithMenus(id, name ?? '', menuIds);
+    return await this.rolesService.updateRoleWithPermissions(
+      id,
+      payload.name,
+      payload.permissions,
+      req.user,
+    );
   }
 
- @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('roles.manage')
   @Get('allrole')
   async getAllRoles(): Promise<any> {
-    // Add :Promise<any> return type
     const roles = await this.rolesService.getAllRoles();
     return {
       message: 'All roles retrieved successfully',
@@ -79,6 +88,7 @@ export class RolesController {
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('roles.manage')
   @Delete('deleterole/:id')
   @HttpCode(HttpStatus.OK)
   async deleteRole(@Param('id') id: string) {
@@ -86,25 +96,19 @@ export class RolesController {
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('roles.manage')
   @Put(':roleId')
-  async assignMenusToRole(
+  async assignPermissionsToRole(
     @Param('roleId') roleId: string,
-    @Body('menuIds') menuIds: string[],
+    @Body('permissions') permissions: string[],
+    @Req() req: AuthenticatedRequest,
   ) {
-    const role = await this.rolesService.assignMenusToRole(roleId, menuIds);
+    const role = await this.rolesService.assignPermissionsToRole(roleId, permissions, req.user);
 
     return {
-      message: 'Menus assigned successfully',
+      message: 'Permissions assigned successfully',
       data: role,
     };
   }
-
-  @Patch(':id/admin-status')
-  @UseGuards(AdminGuard) // Only existing admins can make others admin
-  async toggleAdminStatus(
-    @Param('id') id: string,
-    @Body('isAdmin') isAdmin: boolean,
-  ) {
-    return this.rolesService.makeRoleAdmin(id, isAdmin);
-  }
 }
+

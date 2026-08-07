@@ -9,7 +9,7 @@ export class AddRolesDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  menuIds?: string[];
+  permissions?: string[];
 }
 
 export class UpdateRolesDto {
@@ -21,5 +21,5 @@ export class UpdateRolesDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  menuIds?: string[];
+  permissions?: string[];
 }

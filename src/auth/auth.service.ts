@@ -40,7 +40,8 @@ export class AuthService {
     if (!hashedPassword) {
       throw new BadRequestException('Error hashing password');
     }
-    await this.usersService.registerUser(email, hashedPassword);
+    const roleId = await this.usersService.resolveDefaultRoleId();
+    await this.usersService.registerUser(email, hashedPassword, roleId);
 
     return { message: 'Signup Successfull' };
   }

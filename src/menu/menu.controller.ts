@@ -14,37 +14,42 @@ import { UpdateMenuDto } from './schema/dto/update-menu.dto';
 import { Menu } from './schema/menu.schema';
 import { JwtAuthGuard } from '../auth/jwt.authguard';
 import { AdminGuard } from '../auth/roles.authguard';
-
+import { RequirePermissions } from '../auth/permissions.decorator';
 
 @Controller('menu')
 export class MenuController {
   constructor(private readonly menuService: MenuService) {}
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('menu.manage')
   @Post()
   createMenu(@Body() dto: CreateMenuDto): Promise<Menu> {
     return this.menuService.createMenu(dto);
   }
   
  @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('menu.read')
   @Get()
   getTree(): Promise<MenuTreeNode[]> {
     return this.menuService.getMenuTree();
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('menu.read')
   @Get(':id')
   getMenuById(@Param('id') id: string) {
     return this.menuService.getMenuById(id);
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('menu.manage')
   @Put(':id')
   updateMenu(@Param('id') id: string, @Body() dto: UpdateMenuDto) {
     return this.menuService.updateMenu(id, dto);
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('menu.manage')
   @Delete(':id')
   deleteMenu(@Param('id') id: string) {
     return this.menuService.deleteMenu(id);

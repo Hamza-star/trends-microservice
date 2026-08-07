@@ -16,6 +16,7 @@ import { CreateLabelDto } from './dto/create-label.dto';
 import { UpdateLabelDto } from './dto/update-label.dto';
 import { JwtAuthGuard } from '../auth/jwt.authguard';
 import { AdminGuard } from '../auth/roles.authguard';
+import { RequirePermissions } from '../auth/permissions.decorator';
 
 @Controller('labels')
 export class LabelsController {
@@ -23,6 +24,7 @@ export class LabelsController {
 
   // Create single label
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('labels.manage')
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createLabelDto: CreateLabelDto) {
@@ -31,6 +33,7 @@ export class LabelsController {
 
   // Create multiple labels
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('labels.manage')
   @Post('bulk')
   @HttpCode(HttpStatus.CREATED)
   async createMany(@Body() createLabelDtos: CreateLabelDto[]) {
@@ -39,13 +42,15 @@ export class LabelsController {
 
   // Get all labels
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('labels.read')
   @Get()
   async findAll() {
     return await this.labelsService.findAll();
   }
 
   // Get label by key
-  @UseGuards(JwtAuthGuard, AdminGuard)  
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('labels.read')
   @Get('key/:key')
   async findByKey(@Param('key') key: string) {
     return await this.labelsService.findByKey(key);
@@ -53,6 +58,7 @@ export class LabelsController {
 
   // Get label by id
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('labels.read')
   @Get('id/:id')
   async findById(@Param('id') id: string) {
     return await this.labelsService.findById(id);
@@ -60,6 +66,7 @@ export class LabelsController {
 
   // Get multiple labels by keys (query params: ?keys=key1,key2,key3)
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('labels.read')
   @Get('bulk/keys')
   async findByKeys(@Query('keys') keys: string) {
     const keysArray = keys ? keys.split(',') : [];
@@ -68,6 +75,7 @@ export class LabelsController {
 
   // Get multiple labels by ids (query params: ?ids=id1,id2,id3)
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('labels.read')
   @Get('bulk/ids')
   async findByIds(@Query('ids') ids: string) {
     const idsArray = ids ? ids.split(',') : [];
@@ -76,6 +84,7 @@ export class LabelsController {
 
   // Update label by key
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('labels.manage')
   @Put('key/:key')
   async updateByKey(
     @Param('key') key: string,
@@ -86,6 +95,7 @@ export class LabelsController {
 
   // Update label by id
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('labels.manage')
   @Put('id/:id')
   async updateById(
     @Param('id') id: string,
@@ -96,6 +106,7 @@ export class LabelsController {
 
   // Delete label by key
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('labels.manage')
   @Delete('key/:key')
   async deleteByKey(@Param('key') key: string) {
     return await this.labelsService.deleteByKey(key);
@@ -103,6 +114,7 @@ export class LabelsController {
 
   // Delete label by id
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('labels.manage')
   @Delete('id/:id')
   async deleteById(@Param('id') id: string) {
     return await this.labelsService.deleteById(id);
@@ -110,6 +122,7 @@ export class LabelsController {
 
   // Delete multiple labels by keys
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('labels.manage')
   @Delete('bulk/keys')
   @HttpCode(HttpStatus.OK)
   async deleteManyByKeys(@Body('keys') keys: string[]) {
@@ -118,6 +131,7 @@ export class LabelsController {
 
   // Delete multiple labels by ids
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @RequirePermissions('labels.manage')
   @Delete('bulk/ids')
   @HttpCode(HttpStatus.OK)
   async deleteManyByIds(@Body('ids') ids: string[]) {

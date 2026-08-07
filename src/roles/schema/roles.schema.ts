@@ -8,14 +8,14 @@ export class Roles {
   @Prop({ required: true, unique: true, trim: true })
   name!: string;
 
-  @Prop({
-    type: [{ type: Types.ObjectId, ref: 'Privelleges' }],
-    default: [],
-  })
-  privelleges!: Types.ObjectId[];
+  @Prop({ type: [String], default: [] })
+  permissions!: string[];
 
   @Prop({ default: false })
-  isAdmin!: boolean;
+  isSystem!: boolean;
+
+  @Prop({ type: Types.ObjectId, ref: 'Users', default: null })
+  createdBy?: Types.ObjectId | null;
 
   @Prop({
     type: [{ type: Types.ObjectId, ref: 'Menu' }],

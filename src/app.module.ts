@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import mongoose from 'mongoose';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
@@ -23,6 +24,10 @@ import { LabelsModule } from './labels/labels.module';
         uri:
           configService.get<string>('MONGODB_URI') ??
           'mongodb://127.0.0.1:27017/user-management-nestjs',
+        connectionFactory: (connection) => {
+          connection.set('strictPopulate', false);
+          return connection;
+        },
       }),
     }),
     AuthModule,
