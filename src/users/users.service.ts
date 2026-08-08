@@ -93,6 +93,16 @@ export class UsersService {
       throw new BadRequestException('Role not found');
     }
 
+    const isTargetRoleSuperAdmin = String(role.name ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
+    const actorRole = currentUser?.role
+      ? await this.roleModel.findById(currentUser.role).select('name').lean().exec()
+      : null;
+    const isActorSuperAdmin = !!actorRole && String(actorRole.name ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
+
+    if (isTargetRoleSuperAdmin && !isActorSuperAdmin) {
+      throw new BadRequestException('Only SUPER_ADMIN can assign SUPER_ADMIN role.');
+    }
+
     if (currentUser?.role) {
       await this.authorizationPolicy.assertCanAssignRoleToUser(
         (Array.isArray(role.permissions) ? role.permissions : []) as PermissionValue[],
@@ -521,6 +531,25 @@ export class UsersService {
     updates: Partial<Users> & { roleId?: string },
     currentUser?: RoleAssignmentContext,
   ): Promise<{ message: string }> {
+    const existingUser = await this.userModel.findById(id).exec();
+    if (!existingUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    const targetRole = existingUser.role
+      ? await this.roleModel.findById(existingUser.role).select('name').lean().exec()
+      : null;
+    const isTargetSuperAdmin = !!targetRole && String(targetRole.name ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
+
+    const actorRole = currentUser?.role
+      ? await this.roleModel.findById(currentUser.role).select('name').lean().exec()
+      : null;
+    const isActorSuperAdmin = !!actorRole && String(actorRole.name ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
+
+    if (isTargetSuperAdmin && !isActorSuperAdmin) {
+      throw new BadRequestException('Cannot modify SUPER_ADMIN user.');
+    }
+
     if (updates.password) {
       updates.password = await bcrypt.hash(updates.password, 10);
     }
@@ -535,6 +564,11 @@ export class UsersService {
       const role = await this.roleModel.findById(updates.roleId);
       if (!role) {
         throw new BadRequestException('Role does not exist');
+      }
+
+      const isNewRoleSuperAdmin = String(role.name ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
+      if (isNewRoleSuperAdmin && !isActorSuperAdmin) {
+        throw new BadRequestException('Only SUPER_ADMIN can assign SUPER_ADMIN role.');
       }
 
       if (currentUser?.role) {
@@ -553,7 +587,7 @@ export class UsersService {
     const updatedUser = await this.userModel.findByIdAndUpdate(
       id,
       { $set: updates },
-      { new: true },
+      { returnDocument: 'after' },
     );
 
     if (!updatedUser) {

@@ -108,7 +108,7 @@ export class RolesService {
       updateData.menuIds = [...new Set((menuIds ?? []).filter(Boolean))].map((menuId) => new Types.ObjectId(menuId));
     }
 
-    const updatedRole = await this.rolesModel.findByIdAndUpdate(id, updateData, { new: true }).exec();
+    const updatedRole = await this.rolesModel.findByIdAndUpdate(id, updateData, { returnDocument: 'after' }).exec();
 
     if (!updatedRole) {
       throw new NotFoundException(`Role with ID ${id} not found`);
@@ -134,6 +134,8 @@ export class RolesService {
     if (!role) {
       throw new NotFoundException('Role not found');
     }
+
+    await this.authorizationPolicy.assertRoleModifiable(role, currentUser);
 
     const normalizedPermissions = [...new Set((permissions ?? []).filter(Boolean))] as PermissionValue[];
 

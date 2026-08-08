@@ -69,15 +69,18 @@ export class AuthorizationPolicy {
   }
 
   async assertRoleModifiable(role: RolesDocument, currentUser?: { userId?: string; role?: string }): Promise<void> {
-    if (role.isSystem && currentUser?.role) {
-      const actorRole = await this.rolesModel.findById(currentUser.role);
-      if (!actorRole || !this.isSuperAdmin(actorRole.name)) {
-        throw new BadRequestException('System roles can only be modified by SUPER_ADMIN.');
-      }
+    const actorRole = currentUser?.role ? await this.rolesModel.findById(currentUser.role) : null;
+    const isActorSuperAdmin = !!actorRole && this.isSuperAdmin(actorRole.name);
+
+    if (this.isSuperAdmin(role.name) && !isActorSuperAdmin) {
+      throw new BadRequestException('SUPER_ADMIN role can only be modified by SUPER_ADMIN.');
     }
 
-    if (role.createdBy && currentUser?.userId && role.createdBy.toString() !== currentUser.userId) {
-      const actorRole = await this.rolesModel.findById(currentUser.role);
+    if (role.isSystem && !isActorSuperAdmin) {
+      throw new BadRequestException('System roles can only be modified by SUPER_ADMIN.');
+    }
+
+    if (role.createdBy && currentUser?.userId && role.createdBy.toString() !== currentUser.userId && !isActorSuperAdmin) {
       if (!actorRole || !this.isSuperAdmin(actorRole.name)) {
         throw new BadRequestException('You can only edit roles you created.');
       }

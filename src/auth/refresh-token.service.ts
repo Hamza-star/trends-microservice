@@ -116,7 +116,7 @@ export class RefreshTokenService {
       .findOneAndUpdate(
         { _id: session._id, revokedAt: null, expiresAt: { $gt: now } },
         { $set: { revokedAt: now, revokedReason: 'rotated' } },
-        { new: true },
+        { returnDocument: 'after' },
       )
       .exec();
 

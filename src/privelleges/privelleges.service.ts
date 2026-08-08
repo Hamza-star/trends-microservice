@@ -29,7 +29,7 @@ export class PrivellegesService {
     name: string,
   ): Promise<{ message: string }> {
     const privelleges = await this.privellegesModel
-      .findByIdAndUpdate(id, { name }, { new: true })
+      .findByIdAndUpdate(id, { name }, { returnDocument: 'after' })
       .exec();
     if (!privelleges) {
       throw new NotFoundException(`Privelleges with id ${id} not found`);
