@@ -10,6 +10,9 @@ export class Users {
   @Prop({ type: Types.ObjectId, ref: 'Roles', required: true })
   role!: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'Users', default: null })
+  createdBy?: Types.ObjectId | null;
+
   @Prop({ trim: true })
   name?: string;
 

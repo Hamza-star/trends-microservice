@@ -84,10 +84,10 @@ export class RolesController {
   }
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('roles.manage')
+  @RequirePermissions('roles.read')
   @Get('allrole')
-  async getAllRoles(): Promise<any> {
-    const roles = await this.rolesService.getAllRoles();
+  async getAllRoles(@Req() req: AuthenticatedRequest): Promise<any> {
+    const roles = await this.rolesService.getAllRoles(req.user);
     return {
       message: 'All roles retrieved successfully',
       data: roles,

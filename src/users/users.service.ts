@@ -108,20 +108,38 @@ export class UsersService {
       email,
       password: hashedPassword,
       role: role._id, // store ObjectId reference
+      createdBy: currentUser?.userId ? new Types.ObjectId(currentUser.userId) : undefined,
     });
 
     return newUser.save();
   }
 
-  async findAll(): Promise<Users[]> {
+  async findAll(currentUser?: RoleAssignmentContext): Promise<Users[]> {
+    if (!currentUser?.userId) {
+      return [];
+    }
+
+    const actorRole = currentUser.role
+      ? await this.roleModel.findById(currentUser.role).select('name').lean().exec()
+      : null;
+
+    const isSuperAdmin = actorRole?.name?.toString().trim().toUpperCase() === 'SUPER_ADMIN';
+
+    const query: Record<string, unknown> = {
+      _id: { $ne: new Types.ObjectId(currentUser.userId) },
+    };
+
+    if (!isSuperAdmin) {
+      query.createdBy = new Types.ObjectId(currentUser.userId);
+    }
+
     const users = await this.userModel
-      .find()
+      .find(query)
       .populate({
         path: 'role',
       })
       .exec();
 
-    if (!users) throw new NotFoundException('User not found');
     return users;
   }
 

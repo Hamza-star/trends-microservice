@@ -147,9 +147,19 @@ export class RolesService {
     return role;
   }
 
-  async getAllRoles() {
+  async getAllRoles(currentUser?: { userId?: string; role?: string }) {
     try {
-      const roles = await this.rolesModel.find().populate<{ menuIds: any[] }>('menuIds').lean();
+      const actorRole = currentUser?.role
+        ? await this.rolesModel.findById(currentUser.role).select('name').lean().exec()
+        : null;
+
+      const isSuperAdmin = actorRole?.name?.toString().trim().toUpperCase() === 'SUPER_ADMIN';
+
+      const query: Record<string, unknown> = isSuperAdmin
+        ? {}
+        : { createdBy: currentUser?.userId ? new Types.ObjectId(currentUser.userId) : null };
+
+      const roles = await this.rolesModel.find(query).populate<{ menuIds: any[] }>('menuIds').lean();
 
       if (!roles || roles.length === 0) {
         return [];

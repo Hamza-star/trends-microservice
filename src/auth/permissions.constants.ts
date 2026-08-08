@@ -2,6 +2,7 @@ export const Permission = {
   ROLES_MANAGE: 'roles.manage',
   USERS_MANAGE: 'users.manage',
   USERS_READ: 'users.read',
+  ROLES_READ: 'roles.read',
   MENU_MANAGE: 'menu.manage',
   MENU_READ: 'menu.read',
   LABELS_MANAGE: 'labels.manage',

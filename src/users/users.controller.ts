@@ -55,8 +55,8 @@ export class UsersController {
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermissions('users.read')
   @Get('allUsers')
-  findAllUsers() {
-    return this.usersService.findAll();
+  findAllUsers(@Req() req: AuthenticatedRequest) {
+    return this.usersService.findAll(req.user);
   }
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
