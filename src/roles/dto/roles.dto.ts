@@ -7,6 +7,11 @@ export class AddRolesDto {
   name!: string;
 
   @IsOptional()
+  @IsString()
+  @MinLength(2)
+  code?: string;
+
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
   permissions?: string[];
@@ -22,6 +27,11 @@ export class UpdateRolesDto {
   @IsString()
   @MinLength(2)
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  code?: string;
 
   @IsOptional()
   @IsArray()

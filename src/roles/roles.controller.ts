@@ -53,6 +53,7 @@ export class RolesController {
         permissions,
         req.user,
         menuIds,
+        payload.code,
       );
       return {
         message: 'Role created successfully',
@@ -80,6 +81,7 @@ export class RolesController {
       payload.permissions,
       req.user,
       payload.menuIds,
+      payload.code,
     );
   }
 

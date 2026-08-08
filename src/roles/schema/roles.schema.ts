@@ -8,6 +8,9 @@ export class Roles {
   @Prop({ required: true, unique: true, trim: true })
   name!: string;
 
+  @Prop({ unique: true, sparse: true, trim: true, uppercase: true })
+  code?: string;
+
   @Prop({ type: [String], default: [] })
   permissions!: string[];
 

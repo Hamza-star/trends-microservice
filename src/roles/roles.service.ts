@@ -40,13 +40,22 @@ export class RolesService {
     permissions: string[],
     currentUser?: { userId?: string; role?: string },
     menuIds?: string[],
+    code?: string,
   ): Promise<Roles> {
-    if (this.isReservedSuperAdminName(name)) {
-      throw new BadRequestException('Role name SUPER_ADMIN is reserved and cannot be created.');
+    const normalizedCode = this.normalizeRoleCode(code ?? name);
+    if (!normalizedCode) {
+      throw new BadRequestException('Role code must contain alphanumeric characters.');
+    }
+
+    if (this.isReservedSuperAdminIdentifier(name) || this.isReservedSuperAdminIdentifier(normalizedCode)) {
+      throw new BadRequestException('Role name or code SUPER_ADMIN is reserved and cannot be created.');
     }
 
     const existingRole = await this.rolesModel.findOne({
-      name: { $regex: new RegExp(`^${name}$`, 'i') },
+      $or: [
+        { name: { $regex: new RegExp(`^${name}$`, 'i') } },
+        { code: normalizedCode },
+      ],
     });
 
     if (existingRole) {
@@ -63,6 +72,7 @@ export class RolesService {
 
     const newRole = new this.rolesModel({
       name,
+      code: normalizedCode,
       permissions: normalizedPermissions,
       menuIds: normalizedMenuIds,
       createdBy: currentUser?.userId ? new Types.ObjectId(currentUser.userId) : undefined,
@@ -77,6 +87,7 @@ export class RolesService {
     permissions?: string[],
     currentUser?: { userId?: string; role?: string },
     menuIds?: string[],
+    code?: string,
   ): Promise<{ message: string; data?: any }> {
     const role = await this.rolesModel.findById(id);
 
@@ -88,10 +99,21 @@ export class RolesService {
 
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) {
-      if (this.isReservedSuperAdminName(name)) {
-        throw new BadRequestException('Role name SUPER_ADMIN is reserved and cannot be used.');
+      if (this.isReservedSuperAdminIdentifier(name) || this.isReservedSuperAdminIdentifier(code)) {
+        throw new BadRequestException('Role name or code SUPER_ADMIN is reserved and cannot be used.');
       }
       updateData.name = name;
+    }
+
+    if (code !== undefined) {
+      const normalizedCode = this.normalizeRoleCode(code);
+      if (!normalizedCode) {
+        throw new BadRequestException('Role code must contain alphanumeric characters.');
+      }
+      if (this.isReservedSuperAdminIdentifier(normalizedCode)) {
+        throw new BadRequestException('Role code SUPER_ADMIN is reserved and cannot be used.');
+      }
+      updateData.code = normalizedCode;
     }
 
     if (permissions !== undefined) {
@@ -120,8 +142,18 @@ export class RolesService {
     };
   }
 
-  private isReservedSuperAdminName(name: string): boolean {
-    return String(name ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
+  private isReservedSuperAdminIdentifier(value?: string): boolean {
+    return String(value ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
+  }
+
+  private normalizeRoleCode(value?: string): string | undefined {
+    if (!value) return undefined;
+    const code = String(value)
+      .trim()
+      .replace(/\s+/g, '_')
+      .replace(/[^A-Z0-9_]/gi, '')
+      .toUpperCase();
+    return code || undefined;
   }
 
   async assignPermissionsToRole(
