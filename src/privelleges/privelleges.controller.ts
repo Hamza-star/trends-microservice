@@ -16,7 +16,7 @@ import { Privelleges } from './schema/privelleges.schema';
 import { AddPrivellegesDto } from './dto/privelleges.dto';
 import { UpdatePrivellegesDto } from './dto/privelleges.dto';
 import { JwtAuthGuard } from '../auth/jwt.authguard';
-import { AdminGuard } from '../auth/roles.authguard';
+import { PermissionGuard } from '../auth/roles.authguard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 
 @Controller('privelleges')
@@ -24,7 +24,7 @@ import { RequirePermissions } from '../auth/permissions.decorator';
 export class PrivellegesController {
   constructor(private readonly privellegesService: PrivellegesService) {}
 
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermissions('permissions.manage')
   @Post('addprivelleges')
   async addPrivelleges(@Body() dto: AddPrivellegesDto): Promise<Privelleges> {
@@ -34,14 +34,14 @@ export class PrivellegesController {
     return await this.privellegesService.createPrivelleges(dto.name);
   }
 
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermissions('permissions.read')
   @Get('allprivelleges')
   async getAllPrivelleges(): Promise<Privelleges[]> {
     return this.privellegesService.getAllPrivelleges();
   }
 
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermissions('permissions.read')
   @Get('allpermissions')
   async getAllPermissions(): Promise<string[]> {
@@ -58,7 +58,7 @@ export class PrivellegesController {
     ];
   }
 
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermissions('permissions.manage')
   @Put('updateprivelleges/:id')
   async updatePrivelleges(
@@ -74,7 +74,7 @@ export class PrivellegesController {
     return await this.privellegesService.getPrivellegesByIdAndUpdate(id, name);
   }
 
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermissions('permissions.manage')
   @Delete('deleteprivelleges/:id')
   async deletePrivelleges(

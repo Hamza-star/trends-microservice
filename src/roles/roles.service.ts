@@ -11,6 +11,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Roles, RolesDocument } from './schema/roles.schema';
 import { UsersDocument } from 'src/users/schema/users.schema';
+import { AuthorizationPolicy } from '../auth/authorization.policy';
+import { PermissionValue } from '../auth/permissions.constants';
 
 interface PopulatedMenu {
   _id: Types.ObjectId;
@@ -30,6 +32,7 @@ export class RolesService {
     private readonly usersModel: Model<UsersDocument>,
     @InjectModel('Menu')
     private readonly menuModel: Model<any>,
+    private readonly authorizationPolicy: AuthorizationPolicy,
   ) {}
 
   async createRoleWithPermissions(
@@ -38,6 +41,10 @@ export class RolesService {
     currentUser?: { userId?: string; role?: string },
     menuIds?: string[],
   ): Promise<Roles> {
+    if (this.isReservedSuperAdminName(name)) {
+      throw new BadRequestException('Role name SUPER_ADMIN is reserved and cannot be created.');
+    }
+
     const existingRole = await this.rolesModel.findOne({
       name: { $regex: new RegExp(`^${name}$`, 'i') },
     });
@@ -46,22 +53,10 @@ export class RolesService {
       throw new BadRequestException(`Role with name '${name}' already exists`);
     }
 
-    const normalizedPermissions = [...new Set((permissions ?? []).filter(Boolean))];
+    const normalizedPermissions = [...new Set((permissions ?? []).filter(Boolean))] as PermissionValue[];
 
     if (currentUser?.role) {
-      const actorRole = await this.rolesModel.findById(currentUser.role);
-      if (!actorRole) {
-        throw new BadRequestException('Actor role not found');
-      }
-
-      const actorPermissions = Array.isArray(actorRole.permissions) ? actorRole.permissions : [];
-      const hasAllPermissions = normalizedPermissions.every((permission) =>
-        actorPermissions.includes(permission),
-      );
-
-      if (!hasAllPermissions && actorRole.name !== 'SUPER_ADMIN') {
-        throw new BadRequestException('You cannot create a role with permissions you do not possess.');
-      }
+      await this.authorizationPolicy.assertCanAssignRolePermissions(normalizedPermissions, currentUser);
     }
 
     const normalizedMenuIds = [...new Set((menuIds ?? []).filter(Boolean))].map((menuId) => new Types.ObjectId(menuId));
@@ -89,38 +84,21 @@ export class RolesService {
       throw new NotFoundException(`Role with ID ${id} not found`);
     }
 
-    if (role.isSystem && currentUser?.role) {
-      const actorRole = await this.rolesModel.findById(currentUser.role);
-      if (actorRole?.name !== 'SUPER_ADMIN') {
-        throw new BadRequestException('System roles can only be modified by SUPER_ADMIN.');
-      }
-    }
-
-    if (role.createdBy && currentUser?.userId && role.createdBy.toString() !== currentUser.userId) {
-      const actorRole = await this.rolesModel.findById(currentUser.role);
-      if (actorRole?.name !== 'SUPER_ADMIN') {
-        throw new BadRequestException('You can only edit roles you created.');
-      }
-    }
+    await this.authorizationPolicy.assertRoleModifiable(role, currentUser);
 
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) {
+      if (this.isReservedSuperAdminName(name)) {
+        throw new BadRequestException('Role name SUPER_ADMIN is reserved and cannot be used.');
+      }
       updateData.name = name;
     }
 
     if (permissions !== undefined) {
-      const normalizedPermissions = [...new Set((permissions ?? []).filter(Boolean))];
+      const normalizedPermissions = [...new Set((permissions ?? []).filter(Boolean))] as PermissionValue[];
 
       if (currentUser?.role) {
-        const actorRole = await this.rolesModel.findById(currentUser.role);
-        const actorPermissions = Array.isArray(actorRole?.permissions) ? actorRole.permissions : [];
-        const hasAllPermissions = normalizedPermissions.every((permission) =>
-          actorPermissions.includes(permission),
-        );
-
-        if (!hasAllPermissions && actorRole?.name !== 'SUPER_ADMIN') {
-          throw new BadRequestException('You cannot update a role with permissions you do not possess.');
-        }
+        await this.authorizationPolicy.assertCanAssignRolePermissions(normalizedPermissions, currentUser);
       }
 
       updateData.permissions = normalizedPermissions;
@@ -142,6 +120,10 @@ export class RolesService {
     };
   }
 
+  private isReservedSuperAdminName(name: string): boolean {
+    return String(name ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
+  }
+
   async assignPermissionsToRole(
     roleId: string,
     permissions: string[],
@@ -153,18 +135,10 @@ export class RolesService {
       throw new NotFoundException('Role not found');
     }
 
-    const normalizedPermissions = [...new Set((permissions ?? []).filter(Boolean))];
+    const normalizedPermissions = [...new Set((permissions ?? []).filter(Boolean))] as PermissionValue[];
 
     if (currentUser?.role) {
-      const actorRole = await this.rolesModel.findById(currentUser.role);
-      const actorPermissions = Array.isArray(actorRole?.permissions) ? actorRole.permissions : [];
-      const hasAllPermissions = normalizedPermissions.every((permission) =>
-        actorPermissions.includes(permission),
-      );
-
-      if (!hasAllPermissions && actorRole?.name !== 'SUPER_ADMIN') {
-        throw new BadRequestException('You cannot assign permissions you do not possess.');
-      }
+      await this.authorizationPolicy.assertCanAssignRolePermissions(normalizedPermissions, currentUser);
     }
 
     role.permissions = normalizedPermissions;
@@ -294,8 +268,15 @@ export class RolesService {
     }
   }
 
-  async getRoleByIdAndDelete(id: string): Promise<{ message: string }> {
+  async getRoleByIdAndDelete(id: string, currentUser?: { userId?: string; role?: string }): Promise<{ message: string }> {
     const roleObjectId = Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : id;
+
+    const role = await this.rolesModel.findById(roleObjectId).exec();
+    if (!role) {
+      throw new NotFoundException(`Role with id ${id} not found`);
+    }
+
+    await this.authorizationPolicy.assertRoleModifiable(role, currentUser);
 
     const usersWithRole = await this.usersModel.countDocuments({
       $or: [{ role: roleObjectId }, { role: id }],
@@ -305,11 +286,7 @@ export class RolesService {
       throw new BadRequestException(`Cannot delete role. ${usersWithRole} user(s) are using this role.`);
     }
 
-    const role = await this.rolesModel.findByIdAndDelete(roleObjectId).exec();
-
-    if (!role) {
-      throw new NotFoundException(`Role with id ${id} not found`);
-    }
+    await this.rolesModel.findByIdAndDelete(roleObjectId).exec();
 
     return { message: 'Role deleted successfully' };
   }

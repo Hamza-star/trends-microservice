@@ -19,7 +19,7 @@ import {
 import { RolesService } from './roles.service';
 import { AddRolesDto, UpdateRolesDto } from './dto/roles.dto';
 import { JwtAuthGuard } from '../auth/jwt.authguard';
-import { AdminGuard } from '../auth/roles.authguard';
+import { PermissionGuard } from '../auth/roles.authguard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import type { Request } from 'express';
 
@@ -35,7 +35,7 @@ interface AuthenticatedRequest extends Request {
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermissions('roles.manage')
   @Post('addrole')
   async createRole(@Body() payload: AddRolesDto, @Req() req: AuthenticatedRequest) {
@@ -66,7 +66,7 @@ export class RolesController {
     }
   }
 
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermissions('roles.manage')
   @Put('updaterole/:id')
   async updateRole(@Param('id') id: string, @Body() payload: UpdateRolesDto, @Req() req: AuthenticatedRequest) {
@@ -83,7 +83,7 @@ export class RolesController {
     );
   }
 
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermissions('roles.manage')
   @Get('allrole')
   async getAllRoles(): Promise<any> {
@@ -94,15 +94,15 @@ export class RolesController {
     };
   }
 
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermissions('roles.manage')
   @Delete('deleterole/:id')
   @HttpCode(HttpStatus.OK)
-  async deleteRole(@Param('id') id: string) {
-    return await this.rolesService.getRoleByIdAndDelete(id);
+  async deleteRole(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return await this.rolesService.getRoleByIdAndDelete(id, req.user);
   }
 
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermissions('roles.manage')
   @Put(':roleId')
   async assignPermissionsToRole(

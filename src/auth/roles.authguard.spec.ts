@@ -2,11 +2,11 @@ import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
-import { AdminGuard } from './roles.authguard';
+import { PermissionGuard } from './roles.authguard';
 import { Roles } from '../roles/schema/roles.schema';
 import { RequirePermissions } from './permissions.decorator';
 
-describe('AdminGuard', () => {
+describe('PermissionGuard', () => {
   it('should deny access when the user lacks a required permission', async () => {
     const rolesModel = {
       findById: jest.fn().mockResolvedValue({
@@ -18,7 +18,7 @@ describe('AdminGuard', () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        AdminGuard,
+        PermissionGuard,
         Reflector,
         {
           provide: getModelToken(Roles.name),
@@ -27,7 +27,7 @@ describe('AdminGuard', () => {
       ],
     }).compile();
 
-    const guard = moduleRef.get(AdminGuard);
+    const guard = moduleRef.get(PermissionGuard);
     const context = {
       switchToHttp: () => ({
         getRequest: () => ({

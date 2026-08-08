@@ -12,6 +12,8 @@ import { Users, UsersDocument } from './schema/users.schema';
 import { Roles, RolesDocument } from '../roles/schema/roles.schema';
 import * as bcrypt from 'bcrypt';
 import { PrivellegesDocument } from 'src/privelleges/schema/privelleges.schema';
+import { AuthorizationPolicy } from '../auth/authorization.policy';
+import { PermissionValue } from '../auth/permissions.constants';
 
 interface RoleAssignmentContext {
   userId?: string;
@@ -64,7 +66,8 @@ export class UsersService {
     @InjectModel(Roles.name) private readonly roleModel: Model<RolesDocument>,
     @InjectModel('Privelleges')
     private readonly privellegesModel: Model<PrivellegesDocument>,
-    @InjectModel('Menu') private readonly menuModel: Model<any>, // Add this line
+    @InjectModel('Menu') private readonly menuModel: Model<any>,
+    private readonly authorizationPolicy: AuthorizationPolicy,
   ) {}
 
   async addUser(
@@ -91,14 +94,10 @@ export class UsersService {
     }
 
     if (currentUser?.role) {
-      const actorRole = await this.roleModel.findById(currentUser.role);
-      const actorPermissions = Array.isArray(actorRole?.permissions) ? actorRole.permissions : [];
-      const rolePermissions = Array.isArray(role.permissions) ? role.permissions : [];
-      const isAllowed = rolePermissions.every((permission) => actorPermissions.includes(permission));
-
-      if (!isAllowed && actorRole?.name !== 'SUPER_ADMIN') {
-        throw new BadRequestException('You cannot assign a role with permissions you do not possess.');
-      }
+      await this.authorizationPolicy.assertCanAssignRoleToUser(
+        (Array.isArray(role.permissions) ? role.permissions : []) as PermissionValue[],
+        currentUser,
+      );
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -521,14 +520,10 @@ export class UsersService {
       }
 
       if (currentUser?.role) {
-        const actorRole = await this.roleModel.findById(currentUser.role);
-        const actorPermissions = Array.isArray(actorRole?.permissions) ? actorRole.permissions : [];
-        const rolePermissions = Array.isArray(role.permissions) ? role.permissions : [];
-        const isAllowed = rolePermissions.every((permission) => actorPermissions.includes(permission));
-
-        if (!isAllowed && actorRole?.name !== 'SUPER_ADMIN') {
-          throw new BadRequestException('You cannot assign a role with permissions you do not possess.');
-        }
+        await this.authorizationPolicy.assertCanAssignRoleToUser(
+          (Array.isArray(role.permissions) ? role.permissions : []) as PermissionValue[],
+          currentUser,
+        );
       }
 
       updates.role = new Types.ObjectId(updates.roleId);
