@@ -3,8 +3,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectModel, InjectConnection } from '@nestjs/mongoose';
-import { Connection, isValidObjectId, Model, Types } from 'mongoose';
+import { InjectModel } from '@nestjs/mongoose';
+import { isValidObjectId, Model, Types } from 'mongoose';
 import { CreateMenuDto } from './schema/dto/create-menu.dto';
 import { UpdateMenuDto } from './schema/dto/update-menu.dto';
 import { MenuDocument } from './schema/menu.schema';
@@ -37,8 +37,6 @@ export class MenuService {
   constructor(
     @InjectModel('Menu')
     private readonly menuModel: Model<MenuDocument>,
-    @InjectConnection()
-    private readonly connection: Connection,
   ) {}
 
   // ---------------------------------------------------------------------
@@ -116,138 +114,121 @@ export class MenuService {
   // ---------------------------------------------------------------------
   // UPDATE
   // ---------------------------------------------------------------------
+  
   async updateMenu(id: string, dto: UpdateMenuDto) {
-    this.ensureValidObjectId(id, 'Menu id');
+  this.ensureValidObjectId(id, 'Menu id');
 
-    const menu = await this.menuModel.findById(id);
-    if (!menu) {
-      throw new NotFoundException('Menu not found');
-    }
+  const menu = await this.menuModel.findById(id);
+  if (!menu) {
+    throw new NotFoundException('Menu not found');
+  }
 
-    const nextType = (dto.type ?? menu.type) as MenuType;
-    const validTypes: MenuType[] = ['TAB', 'SECTION', 'SUBSECTION', 'PAGE'];
-    if (!validTypes.includes(nextType)) {
-      throw new BadRequestException('Invalid menu type');
-    }
+  const nextType = (dto.type ?? menu.type) as MenuType;
+  const validTypes: MenuType[] = ['TAB', 'SECTION', 'SUBSECTION', 'PAGE'];
+  if (!validTypes.includes(nextType)) {
+    throw new BadRequestException('Invalid menu type');
+  }
 
-    const nextTitle =
-      dto.title !== undefined ? this.normalizeTitle(dto.title) : menu.title;
+  const nextTitle =
+    dto.title !== undefined ? this.normalizeTitle(dto.title) : menu.title;
 
-    if (dto.title !== undefined && !nextTitle) {
-      throw new BadRequestException('Title is required');
-    }
+  if (dto.title !== undefined && !nextTitle) {
+    throw new BadRequestException('Title is required');
+  }
 
-    if (dto.slug !== undefined && !this.normalizeSlug(dto.slug)) {
-      throw new BadRequestException('Slug is required');
-    }
+  if (dto.slug !== undefined && !this.normalizeSlug(dto.slug)) {
+    throw new BadRequestException('Slug is required');
+  }
 
-    let nextParentId: Types.ObjectId | null = menu.parentId ?? null;
-    let nextAncestors: Types.ObjectId[] = menu.ancestors ?? [];
+  let nextParentId: Types.ObjectId | null = menu.parentId ?? null;
+  let nextAncestors: Types.ObjectId[] = menu.ancestors ?? [];
 
-    if (dto.parentId !== undefined) {
-      // --- Parent is being changed explicitly ---
-      if (dto.parentId === null || dto.parentId === '') {
-        if (nextType !== 'TAB') {
-          throw new BadRequestException('Only TAB can be at root level');
-        }
-        nextParentId = null;
-        nextAncestors = [];
-      } else {
-        const resolvedParent = await this.resolveParent(dto.parentId, nextType);
-        if (!resolvedParent.parentId || !resolvedParent.parent) {
-          throw new NotFoundException('Parent not found');
-        }
-
-        this.ensureNoCycle(id, resolvedParent.parent);
-
-        nextParentId = resolvedParent.parentId;
-        nextAncestors = [
-          ...(resolvedParent.parent.ancestors ?? []),
-          resolvedParent.parent._id,
-        ];
+  if (dto.parentId !== undefined) {
+    if (dto.parentId === null || dto.parentId === '') {
+      if (nextType !== 'TAB') {
+        throw new BadRequestException('Only TAB can be at root level');
       }
-    } else if (dto.type !== undefined && dto.type !== menu.type) {
-      // --- Only type changed: re-validate against the EXISTING parent ---
-      if (!menu.parentId) {
-        if (nextType !== 'TAB') {
-          throw new BadRequestException(
-            'Only TAB can exist without a parent; provide a parentId to change type',
-          );
-        }
-      } else {
-        const currentParent = await this.menuModel.findById(menu.parentId);
-        if (!currentParent) {
-          throw new NotFoundException('Existing parent not found');
-        }
-        const allowedParents = this.validParentMap[nextType];
-        if (!allowedParents?.includes(currentParent.type as MenuType)) {
-          throw new BadRequestException(
-            `${nextType} cannot exist under ${currentParent.type}; provide a new parentId`,
-          );
-        }
+      nextParentId = null;
+      nextAncestors = [];
+    } else {
+      const resolvedParent = await this.resolveParent(dto.parentId, nextType);
+      if (!resolvedParent.parentId || !resolvedParent.parent) {
+        throw new NotFoundException('Parent not found');
       }
-    }
 
-    if (dto.title !== undefined && nextTitle !== menu.title) {
-      await this.ensureUniqueTitle(nextTitle, nextParentId, id);
-    }
+      this.ensureNoCycle(id, resolvedParent.parent);
 
-    if (dto.order !== undefined && dto.order !== menu.order) {
-      await this.ensureUniqueOrder(dto.order, nextParentId, id);
+      nextParentId = resolvedParent.parentId;
+      nextAncestors = [
+        ...(resolvedParent.parent.ancestors ?? []),
+        resolvedParent.parent._id,
+      ];
     }
-
-    // --- Slug resolution (consistent with create: explicit slug throws on
-    // collision, auto-derived slug from title auto-suffixes) ---
-    let slug = menu.slug;
-    if (dto.slug !== undefined) {
-      const normalizedSlug = this.normalizeSlug(dto.slug);
-      if (normalizedSlug !== menu.slug) {
-        await this.ensureUniqueSlug(normalizedSlug, id);
+  } else if (dto.type !== undefined && dto.type !== menu.type) {
+    if (!menu.parentId) {
+      if (nextType !== 'TAB') {
+        throw new BadRequestException(
+          'Only TAB can exist without a parent; provide a parentId to change type',
+        );
       }
-      slug = normalizedSlug;
-    } else if (dto.title !== undefined && nextTitle !== menu.title) {
-      const base = this.generateSlug(nextTitle);
-      slug = await this.generateUniqueSlug(base, id);
-    }
-
-    const updateData: Partial<MenuDocument> = {
-      title: dto.title !== undefined ? nextTitle : menu.title,
-      slug,
-      type: nextType,
-      parentId: nextParentId,
-      ancestors: nextAncestors,
-      order: dto.order ?? menu.order,
-      icon: dto.icon !== undefined ? dto.icon : menu.icon,
-    };
-
-    const session = await this.connection.startSession();
-    try {
-      let updated: MenuDocument | null = null;
-
-      await session.withTransaction(async () => {
-        updated = await this.menuModel.findByIdAndUpdate(id, updateData, {
-          new: true,
-          session,
-        });
-
-        if (!updated) {
-          throw new NotFoundException('Menu not found');
-        }
-
-        if (dto.parentId !== undefined) {
-          await this.propagateAncestorUpdates(
-            updated._id,
-            updated.ancestors ?? [],
-            session,
-          );
-        }
-      });
-
-      return updated!;
-    } finally {
-      await session.endSession();
+    } else {
+      const currentParent = await this.menuModel.findById(menu.parentId);
+      if (!currentParent) {
+        throw new NotFoundException('Existing parent not found');
+      }
+      const allowedParents = this.validParentMap[nextType];
+      if (!allowedParents?.includes(currentParent.type as MenuType)) {
+        throw new BadRequestException(
+          `${nextType} cannot exist under ${currentParent.type}; provide a new parentId`,
+        );
+      }
     }
   }
+
+  if (dto.title !== undefined && nextTitle !== menu.title) {
+    await this.ensureUniqueTitle(nextTitle, nextParentId, id);
+  }
+
+  if (dto.order !== undefined && dto.order !== menu.order) {
+    await this.ensureUniqueOrder(dto.order, nextParentId, id);
+  }
+
+  let slug = menu.slug;
+  if (dto.slug !== undefined) {
+    const normalizedSlug = this.normalizeSlug(dto.slug);
+    if (normalizedSlug !== menu.slug) {
+      await this.ensureUniqueSlug(normalizedSlug, id);
+    }
+    slug = normalizedSlug;
+  } else if (dto.title !== undefined && nextTitle !== menu.title) {
+    const base = this.generateSlug(nextTitle);
+    slug = await this.generateUniqueSlug(base, id);
+  }
+
+  const updateData: Partial<MenuDocument> = {
+    title: dto.title !== undefined ? nextTitle : menu.title,
+    slug,
+    type: nextType,
+    parentId: nextParentId,
+    ancestors: nextAncestors,
+    order: dto.order ?? menu.order,
+    icon: dto.icon !== undefined ? dto.icon : menu.icon,
+  };
+
+  const updated = await this.menuModel.findByIdAndUpdate(id, updateData, {
+    returnDocument: 'after',
+  });
+
+  if (!updated) {
+    throw new NotFoundException('Menu not found');
+  }
+
+  if (dto.parentId !== undefined) {
+    await this.propagateAncestorUpdates(updated._id, updated.ancestors ?? []);
+  }
+
+  return updated;
+}
 
   // ---------------------------------------------------------------------
   // DELETE
@@ -517,22 +498,17 @@ export class MenuService {
   private async propagateAncestorUpdates(
     menuId: Types.ObjectId,
     ancestors: Types.ObjectId[],
-    session: import('mongoose').ClientSession,
   ): Promise<void> {
-    const children = await this.menuModel.find({ parentId: menuId }, null, {
-      session,
-    });
+    const children = await this.menuModel.find({ parentId: menuId });
 
     for (const child of children) {
       const childAncestors = [...ancestors, menuId];
       // eslint-disable-next-line no-await-in-loop
-      await this.menuModel.findByIdAndUpdate(
-        child._id,
-        { ancestors: childAncestors },
-        { session },
-      );
+      await this.menuModel.findByIdAndUpdate(child._id, {
+        ancestors: childAncestors,
+      });
       // eslint-disable-next-line no-await-in-loop
-      await this.propagateAncestorUpdates(child._id as Types.ObjectId, childAncestors, session);
+      await this.propagateAncestorUpdates(child._id as Types.ObjectId, childAncestors);
     }
   }
 }
