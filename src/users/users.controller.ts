@@ -35,7 +35,7 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('users.manage')
+  @RequirePermissions('users.create')
   @Post('addUser')
   async addUser(@Body() body: AddUserDto, @Req() req: AuthenticatedRequest): Promise<Users> {
     return this.usersService.addUser(body.name, body.email, body.password, body.roleId, req.user);
@@ -67,14 +67,14 @@ export class UsersController {
   }
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('users.manage')
+  @RequirePermissions('users.update')
   @Patch('update/:id')
   updateUser(@Param('id') id: string, @Body() updates: UpdateUserDto, @Req() req: AuthenticatedRequest) {
     return this.usersService.updateUser(id, updates, req.user);
   }
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('users.manage')
+  @RequirePermissions('users.delete')
   @Delete('delete/:id')
   deleteUser(@Param('id') id: string) {
     return this.usersService.deleteUser(id);

@@ -21,7 +21,7 @@ export class MenuController {
   constructor(private readonly menuService: MenuService) {}
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('menu.manage')
+  @RequirePermissions('menu.create')
   @Post()
   createMenu(@Body() dto: CreateMenuDto): Promise<Menu> {
     return this.menuService.createMenu(dto);
@@ -42,14 +42,14 @@ export class MenuController {
   }
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('menu.manage')
+  @RequirePermissions('menu.update')
   @Put(':id')
   updateMenu(@Param('id') id: string, @Body() dto: UpdateMenuDto) {
     return this.menuService.updateMenu(id, dto);
   }
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('menu.manage')
+  @RequirePermissions('menu.delete')
   @Delete(':id')
   deleteMenu(@Param('id') id: string) {
     return this.menuService.deleteMenu(id);

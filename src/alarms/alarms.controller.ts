@@ -189,12 +189,12 @@ export class AlarmsController {
   @Patch('configs/:alarmConfigId')
   updateAlarm(
     @Param('alarmConfigId') alarmConfigId: string,
-    @Body() dto: UpdateAlarmDto,
+    @Body() dto: Omit<UpdateAlarmDto, 'alarmConfigId'>,
   ) {
     return this.alarmsService.updateAlarm({
       ...dto,
       alarmConfigId: new Types.ObjectId(alarmConfigId),
-    });
+    } as UpdateAlarmDto);
   }
 
   @Delete('configs/:alarmConfigId')

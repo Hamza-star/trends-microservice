@@ -303,7 +303,7 @@ export class RolesService {
           permissions: role.permissions,
           isSystem: role.isSystem,
           createdBy: role.createdBy,
-          menuIds: role.menuIds,
+          // menuIds: role.menuIds,
           menuTree: buildMenuTree(allMenuIds),
         };
       });

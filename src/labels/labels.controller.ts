@@ -24,7 +24,7 @@ export class LabelsController {
 
   // Create single label
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('labels.manage')
+  @RequirePermissions('labels.create')
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createLabelDto: CreateLabelDto) {
@@ -33,7 +33,7 @@ export class LabelsController {
 
   // Create multiple labels
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('labels.manage')
+  @RequirePermissions('labels.create')
   @Post('bulk')
   @HttpCode(HttpStatus.CREATED)
   async createMany(@Body() createLabelDtos: CreateLabelDto[]) {
@@ -84,7 +84,7 @@ export class LabelsController {
 
   // Update label by key
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('labels.manage')
+  @RequirePermissions('labels.update')
   @Put('key/:key')
   async updateByKey(
     @Param('key') key: string,
@@ -95,7 +95,7 @@ export class LabelsController {
 
   // Update label by id
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('labels.manage')
+  @RequirePermissions('labels.update')
   @Put('id/:id')
   async updateById(
     @Param('id') id: string,
@@ -106,7 +106,7 @@ export class LabelsController {
 
   // Delete label by key
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('labels.manage')
+  @RequirePermissions('labels.delete')
   @Delete('key/:key')
   async deleteByKey(@Param('key') key: string) {
     return await this.labelsService.deleteByKey(key);
@@ -114,7 +114,7 @@ export class LabelsController {
 
   // Delete label by id
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('labels.manage')
+  @RequirePermissions('labels.delete')
   @Delete('id/:id')
   async deleteById(@Param('id') id: string) {
     return await this.labelsService.deleteById(id);
@@ -122,7 +122,7 @@ export class LabelsController {
 
   // Delete multiple labels by keys
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('labels.manage')
+  @RequirePermissions('labels.delete')
   @Delete('bulk/keys')
   @HttpCode(HttpStatus.OK)
   async deleteManyByKeys(@Body('keys') keys: string[]) {
@@ -131,7 +131,7 @@ export class LabelsController {
 
   // Delete multiple labels by ids
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('labels.manage')
+  @RequirePermissions('labels.delete')
   @Delete('bulk/ids')
   @HttpCode(HttpStatus.OK)
   async deleteManyByIds(@Body('ids') ids: string[]) {

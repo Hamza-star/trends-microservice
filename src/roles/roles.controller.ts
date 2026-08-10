@@ -36,7 +36,7 @@ export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('roles.manage')
+  @RequirePermissions('roles.create')
   @Post('addrole')
   async createRole(@Body() payload: AddRolesDto, @Req() req: AuthenticatedRequest) {
     const name = payload.name;
@@ -68,7 +68,7 @@ export class RolesController {
   }
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('roles.manage')
+  @RequirePermissions('roles.update')
   @Put('updaterole/:id')
   async updateRole(@Param('id') id: string, @Body() payload: UpdateRolesDto, @Req() req: AuthenticatedRequest) {
     if (payload.name !== undefined && !payload.name) {
@@ -97,7 +97,7 @@ export class RolesController {
   }
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('roles.manage')
+  @RequirePermissions('roles.delete')
   @Delete('deleterole/:id')
   @HttpCode(HttpStatus.OK)
   async deleteRole(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
@@ -105,7 +105,7 @@ export class RolesController {
   }
 
   @UseGuards(JwtAuthGuard, PermissionGuard)
-  @RequirePermissions('roles.manage')
+  @RequirePermissions('roles.update')
   @Put(':roleId')
   async assignPermissionsToRole(
     @Param('roleId') roleId: string,

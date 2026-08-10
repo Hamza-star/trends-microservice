@@ -49,6 +49,27 @@ describe('AuthorizationPolicy', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('allows create/read/update/delete when the role has manage permission for that resource', async () => {
+    const rolesModel = service['rolesModel'];
+    (rolesModel.findById as jest.Mock).mockResolvedValue({
+      name: 'Admin',
+      permissions: ['users.manage'],
+      isSystem: false,
+    });
+
+    await expect(
+      service.assertHasPermissions(['users.create'], { role: 'role-id' }),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      service.assertHasPermissions(['users.update'], { role: 'role-id' }),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      service.assertHasPermissions(['users.delete'], { role: 'role-id' }),
+    ).resolves.toBeUndefined();
+  });
+
   it('blocks assigning permissions the actor does not possess', async () => {
     const rolesModel = service['rolesModel'];
     (rolesModel.findById as jest.Mock).mockResolvedValue({

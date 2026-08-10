@@ -29,9 +29,21 @@ export class AuthorizationPolicy {
     }
 
     const permissions = Array.isArray(role.permissions) ? role.permissions : [];
-    const hasAllRequiredPermissions = requiredPermissions.every((permission) =>
-      permissions.includes(permission),
-    );
+
+    const hasPermission = (requiredPermission: PermissionValue): boolean => {
+      if (permissions.includes(requiredPermission)) {
+        return true;
+      }
+
+      const [resource, action] = requiredPermission.split('.') as [string, string];
+      if (action !== 'manage' && permissions.includes(`${resource}.manage` as PermissionValue)) {
+        return true;
+      }
+
+      return false;
+    };
+
+    const hasAllRequiredPermissions = requiredPermissions.every(hasPermission);
 
     if (!hasAllRequiredPermissions) {
       throw new ForbiddenException('Access denied. Missing required permission(s).');
