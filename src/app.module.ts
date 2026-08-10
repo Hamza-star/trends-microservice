@@ -10,6 +10,7 @@ import { PrivellegesModule } from './privelleges/privelleges.module';
 import { RolesModule } from './roles/roles.module';
 import { UsersModule } from './users/users.module';
 import { LabelsModule } from './labels/labels.module';
+import { AlarmsModule } from './alarms/alarms.module';
 
 @Module({
   imports: [
@@ -35,7 +36,8 @@ import { LabelsModule } from './labels/labels.module';
     RolesModule,
     PrivellegesModule,
     MenuModule,
-    LabelsModule
+    LabelsModule,
+    AlarmsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
