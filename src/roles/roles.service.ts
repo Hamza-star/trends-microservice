@@ -184,10 +184,10 @@ export class RolesService {
   async getAllRoles(currentUser?: { userId?: string; role?: string }) {
     try {
       const actorRole = currentUser?.role
-        ? await this.rolesModel.findById(currentUser.role).select('name').lean().exec()
+        ? await this.rolesModel.findById(currentUser.role).select('code').lean().exec()
         : null;
 
-      const isSuperAdmin = actorRole?.name?.toString().trim().toUpperCase() === 'SUPER_ADMIN';
+      const isSuperAdmin = actorRole?.code?.toString().trim().toUpperCase() === 'SUPER_ADMIN';
 
       const query: Record<string, unknown> = isSuperAdmin
         ? {}
