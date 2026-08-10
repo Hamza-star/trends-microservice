@@ -24,7 +24,7 @@ interface RoleAssignmentContext {
 export class UsersService {
   async resolveDefaultRoleId(): Promise<string | undefined> {
     const superAdminRole = await this.roleModel
-      .findOne({ name: { $regex: new RegExp('^SUPER_ADMIN$', 'i') } })
+      .findOne({ code: { $regex: new RegExp('^SUPER_ADMIN$', 'i') } })
       .select('_id')
       .lean()
       .exec();
@@ -93,11 +93,11 @@ export class UsersService {
       throw new BadRequestException('Role not found');
     }
 
-    const isTargetRoleSuperAdmin = String(role.name ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
+    const isTargetRoleSuperAdmin = String(role.code ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
     const actorRole = currentUser?.role
-      ? await this.roleModel.findById(currentUser.role).select('name').lean().exec()
+      ? await this.roleModel.findById(currentUser.role).select('code').lean().exec()
       : null;
-    const isActorSuperAdmin = !!actorRole && String(actorRole.name ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
+    const isActorSuperAdmin = !!actorRole && String(actorRole.code ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
 
     if (isTargetRoleSuperAdmin && !isActorSuperAdmin) {
       throw new BadRequestException('Only SUPER_ADMIN can assign SUPER_ADMIN role.');
@@ -130,10 +130,10 @@ export class UsersService {
     }
 
     const actorRole = currentUser.role
-      ? await this.roleModel.findById(currentUser.role).select('name').lean().exec()
+      ? await this.roleModel.findById(currentUser.role).select('code').lean().exec()
       : null;
 
-    const isSuperAdmin = actorRole?.name?.toString().trim().toUpperCase() === 'SUPER_ADMIN';
+    const isSuperAdmin = actorRole?.code?.toString().trim().toUpperCase() === 'SUPER_ADMIN';
 
     const query: Record<string, unknown> = {
       _id: { $ne: new Types.ObjectId(currentUser.userId) },
@@ -537,14 +537,14 @@ export class UsersService {
     }
 
     const targetRole = existingUser.role
-      ? await this.roleModel.findById(existingUser.role).select('name').lean().exec()
+      ? await this.roleModel.findById(existingUser.role).select('code').lean().exec()
       : null;
-    const isTargetSuperAdmin = !!targetRole && String(targetRole.name ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
+    const isTargetSuperAdmin = !!targetRole && String(targetRole.code ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
 
     const actorRole = currentUser?.role
-      ? await this.roleModel.findById(currentUser.role).select('name').lean().exec()
+      ? await this.roleModel.findById(currentUser.role).select('code').lean().exec()
       : null;
-    const isActorSuperAdmin = !!actorRole && String(actorRole.name ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
+    const isActorSuperAdmin = !!actorRole && String(actorRole.code ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
 
     if (isTargetSuperAdmin && !isActorSuperAdmin) {
       throw new BadRequestException('Cannot modify SUPER_ADMIN user.');
@@ -566,7 +566,7 @@ export class UsersService {
         throw new BadRequestException('Role does not exist');
       }
 
-      const isNewRoleSuperAdmin = String(role.name ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
+      const isNewRoleSuperAdmin = String(role.code ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
       if (isNewRoleSuperAdmin && !isActorSuperAdmin) {
         throw new BadRequestException('Only SUPER_ADMIN can assign SUPER_ADMIN role.');
       }

@@ -68,7 +68,7 @@ export class AuthorizationPolicy {
       actorPermissions.includes(permission),
     );
 
-    if (!hasAllPermissions && !this.isSuperAdmin(actorRole.name)) {
+    if (!hasAllPermissions && !this.isSuperAdmin(actorRole.code)) {
       throw new BadRequestException('You cannot assign permissions you do not possess.');
     }
   }
@@ -82,9 +82,9 @@ export class AuthorizationPolicy {
 
   async assertRoleModifiable(role: RolesDocument, currentUser?: { userId?: string; role?: string }): Promise<void> {
     const actorRole = currentUser?.role ? await this.rolesModel.findById(currentUser.role) : null;
-    const isActorSuperAdmin = !!actorRole && this.isSuperAdmin(actorRole.name);
+    const isActorSuperAdmin = !!actorRole && this.isSuperAdmin(actorRole.code);
 
-    if (this.isSuperAdmin(role.name) && !isActorSuperAdmin) {
+    if (this.isSuperAdmin(role.code) && !isActorSuperAdmin) {
       throw new BadRequestException('SUPER_ADMIN role can only be modified by SUPER_ADMIN.');
     }
 
@@ -93,13 +93,13 @@ export class AuthorizationPolicy {
     }
 
     if (role.createdBy && currentUser?.userId && role.createdBy.toString() !== currentUser.userId && !isActorSuperAdmin) {
-      if (!actorRole || !this.isSuperAdmin(actorRole.name)) {
+      if (!actorRole || !this.isSuperAdmin(actorRole.code)) {
         throw new BadRequestException('You can only edit roles you created.');
       }
     }
   }
 
-  private isSuperAdmin(roleName?: string): boolean {
-    return String(roleName ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
+  private isSuperAdmin(roleCode?: string): boolean {
+    return String(roleCode ?? '').trim().toUpperCase() === 'SUPER_ADMIN';
   }
 }
