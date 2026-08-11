@@ -39,6 +39,7 @@ export async function bootstrap() {
     .addBearerAuth() // If you have JWT authentication
     .build();
   
+    // Add swaggerModule to the app 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document, {
     swaggerOptions: {
