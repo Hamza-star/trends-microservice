@@ -798,6 +798,9 @@ export class AlarmsService {
   async processActiveAlarms() {
     const allPayloads = await this.fetchAlarmPayloads();
 
+    console.log('🔔 Active alarm payload count:', Object.keys(allPayloads).length);
+    console.log('🔔 Active alarm payload keys:', Object.keys(allPayloads).slice(0, 25));
+
     if (!Object.keys(allPayloads).length) {
       return [];
     }
@@ -806,6 +809,8 @@ export class AlarmsService {
       this.alarmsModel.find().populate('alarmTypeId').lean(),
       this.alarmOccurrenceModel.find({ alarmStatus: true }).lean(),
     ]);
+
+    console.log('🔔 Loaded alarm configs:', alarms.length);
 
     const triggeredAlarms: any[] = [];
     const activeConfigIds = new Set<string>();
@@ -859,6 +864,7 @@ export class AlarmsService {
 
   private async fetchAlarmPayloads(): Promise<Record<string, number>> {
     const alarmsLinksStr = process.env.NODERED_URL;
+    console.log('NODERED_URL:', alarmsLinksStr);
 
     if (!alarmsLinksStr) {
       throw new BadRequestException('NODERED_URL not configured');
@@ -891,12 +897,17 @@ export class AlarmsService {
 
     const results = await Promise.all(fetchPromises);
 
-    for (const rawData of results) {
-      if (rawData) {
-        this.processDataStructure(rawData, allPayloads);
+    results.forEach((rawData, index) => {
+      if (!rawData) {
+        console.warn(`⚠️ Payload fetch returned empty for link index ${index}:`, alarmsLinks[index]);
+        return;
       }
-    }
+      console.log(`ℹ️ Payload fetched successfully for link index ${index}:`, alarmsLinks[index]);
+      console.log(`ℹ️ Payload type for link index ${index}:`, Array.isArray(rawData) ? 'array' : typeof rawData);
+      this.processDataStructure(rawData, allPayloads);
+    });
 
+    console.log('🔔 Aggregated payload count after processing:', Object.keys(allPayloads).length);
     return allPayloads;
   }
 
@@ -930,7 +941,7 @@ export class AlarmsService {
         ? this.getTriggeredThreshold(matchedValue, logic.thresholds)
         : null;
 
-    return {
+    const status = {
       alarmLocation: logic.alarmLocation,
       alarmSubLocation: logic.alarmSubLocation,
       alarmDevice: logic.alarmDevice,
@@ -939,6 +950,19 @@ export class AlarmsService {
       threshold: triggeredThreshold,
       isTriggered: !!triggeredThreshold,
     };
+
+    console.log('🔍 Logic evaluation:', {
+      location: logic.alarmLocation,
+      subLocation: logic.alarmSubLocation,
+      device: logic.alarmDevice,
+      parameter: logic.alarmParameter,
+      matchedKey: matched?.key || null,
+      matchedValue,
+      threshold: triggeredThreshold,
+      isTriggered: status.isTriggered,
+    });
+
+    return status;
   }
 
   private shouldTriggerAlarm(
@@ -1098,116 +1122,151 @@ export class AlarmsService {
     }
   }
 
+  /**
+   * Match a payload key to the alarm logic using only location and parameter.
+   *
+   * - locationSegments are matched in order anywhere in the key.
+   * - parameterSegments are matched only at the end of the key (suffix match).
+   * - keys are split on non-alphanumeric characters, so underscore-separated payloads
+   *   like PG_PC_Z1_GW0_PLC1_EM01_V_L1_N and U1_GW01_Voltage_AB both work.
+   */
   private findMatchingData(
     payload: Record<string, number>,
     logic: Logic,
   ): { key: string; value: number } | null {
-    // Target values ko lowercase karo
-    const targetLocation = logic.alarmLocation?.toLowerCase(); // "z1"
-    const targetSubLocation = logic.alarmSubLocation?.toLowerCase(); // "gw0"
-    const targetDevice = logic.alarmDevice?.toLowerCase(); // "em01"
-    const targetParameter = logic.alarmParameter?.toLowerCase(); // "v_l1_n"
+    const targetLocation = logic.alarmLocation?.toLowerCase().trim() || '';
+    const targetParameter = logic.alarmParameter?.toLowerCase().trim() || '';
+
+    const { locationSegments, parameterSegments } = this.buildTargetSegments(
+      targetLocation,
+      targetParameter,
+    );
 
     console.log('🔍 Looking for:', {
       location: targetLocation,
-      subLocation: targetSubLocation,
-      device: targetDevice,
       parameter: targetParameter,
+      locationSegments,
+      parameterSegments,
     });
 
     for (const [key, value] of Object.entries(payload)) {
-      const keyLower = key.toLowerCase();
-      const afterPCPart = this.extractAfterPC(keyLower);
+      const keySegments = key
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((segment) => segment.length > 0);
 
-      if (!afterPCPart) {
-        continue;
-      }
-
-      const match = this.matchWithDynamicPLC(
-        afterPCPart,
-        targetLocation,
-        targetSubLocation,
-        targetDevice,
-        targetParameter,
-      );
-
-      if (match) {
+      if (
+        this.matchesPayloadKey(keySegments, locationSegments, parameterSegments)
+      ) {
+        console.log('✅ Found match for logic:', {
+          logic: targetLocation,
+          payloadKey: key,
+          keySegments,
+          locationSegments,
+          parameterSegments,
+        });
         return { key, value };
       }
     }
+
+    console.log('🚫 No payload match found for logic:', {
+      location: targetLocation,
+      parameter: targetParameter,
+      locationSegments,
+      parameterSegments,
+    });
 
     return null;
   }
 
   /**
-   * "PC" ke baad ka part extract karo
-   * Example: "pg_pc_z1_gw0_plc1_em01_v_l1_n" -> "z1_gw0_plc1_em01_v_l1_n"
+   * Build token segments for matching.
+   *
+   * - locationSegments are used for ordered matching anywhere in the payload key.
+   * - parameterSegments are used for suffix matching.
    */
-  private extractAfterPC(key: string): string | null {
-    // "pc" ko dhundho (with underscores)
-    const pcIndex = key.indexOf('_pc_');
+  private buildTargetSegments(
+    targetLocation: string,
+    targetParameter: string,
+  ): {
+    locationSegments: string[];
+    parameterSegments: string[];
+  } {
+    const locationSegments = targetLocation
+      ? targetLocation.split(/[_\s]+/).filter((s) => s.length > 0)
+      : [];
+    const parameterSegments = targetParameter
+      ? targetParameter.split(/[_\s]+/).filter((s) => s.length > 0)
+      : [];
 
-    if (pcIndex === -1) {
-      // Bina underscore ke bhi check karo
-      const altPcIndex = key.indexOf('pc');
-      if (altPcIndex === -1) return null;
-      return key.substring(altPcIndex + 2); // "pc" ke baad
-    }
-
-    // "_pc_" ke baad ka part (4 characters include "_pc_")
-    return key.substring(pcIndex + 4);
+    return { locationSegments, parameterSegments };
   }
 
   /**
-   * Dynamic PLC handling ke saath match karo
+   * Match a key using explicit delimiter-aware rules:
+   * - must contain the location segments in order
+   * - must end with the parameter segments
    */
-  private matchWithDynamicPLC(
-    extractedPart: string,
-    targetLocation: string,
-    targetSubLocation: string,
-    targetDevice: string,
-    targetParameter: string,
+  private matchesPayloadKey(
+    keySegments: string[],
+    locationSegments: string[],
+    parameterSegments: string[],
   ): boolean {
-    // Extracted part ko underscore se split karo
-    const parts = extractedPart.split('_').filter((p) => p.length > 0);
+    if (!locationSegments.length && !parameterSegments.length) {
+      return false;
+    }
 
-    let currentIndex = 0;
-    const totalParts = parts.length;
-
-    if (totalParts < 2) return false;
-
-    if (targetLocation) {
-      if (currentIndex >= totalParts) return false;
-      if (!this.fuzzyMatch(parts[currentIndex], targetLocation)) {
+    if (locationSegments.length) {
+      if (!this.matchesOrderedSegments(keySegments, locationSegments)) {
         return false;
       }
-      currentIndex++;
     }
 
-    if (targetSubLocation) {
-      if (currentIndex >= totalParts) return false;
-      if (!this.fuzzyMatch(parts[currentIndex], targetSubLocation)) {
+    if (parameterSegments.length) {
+      if (!this.matchesSuffixSegments(keySegments, parameterSegments)) {
         return false;
       }
-      currentIndex++;
     }
 
-    if (currentIndex < totalParts && parts[currentIndex].startsWith('plc')) {
-      currentIndex++;
-    }
+    return true;
+  }
 
-    if (targetDevice) {
-      if (currentIndex >= totalParts) return false;
-      if (!this.fuzzyMatch(parts[currentIndex], targetDevice)) {
-        return false;
+  private matchesOrderedSegments(
+    keySegments: string[],
+    targetSegments: string[],
+  ): boolean {
+    let matchedIndex = 0;
+
+    for (const segment of keySegments) {
+      if (this.fuzzyMatch(segment, targetSegments[matchedIndex])) {
+        matchedIndex += 1;
+        if (matchedIndex === targetSegments.length) {
+          return true;
+        }
       }
-      currentIndex++;
     }
 
-    if (targetParameter) {
-      if (currentIndex >= totalParts) return false;
-      const remainingParts = parts.slice(currentIndex).join('_');
-      if (remainingParts !== targetParameter) {
+    return false;
+  }
+
+  /**
+   * Require that the payload key ends with the parameter segments.
+   * This makes parameter matching much more precise for underscore-delimited keys.
+   */
+  private matchesSuffixSegments(
+    keySegments: string[],
+    parameterSegments: string[],
+  ): boolean {
+    if (parameterSegments.length > keySegments.length) {
+      return false;
+    }
+
+    const startIndex = keySegments.length - parameterSegments.length;
+
+    for (let i = 0; i < parameterSegments.length; i += 1) {
+      if (
+        !this.fuzzyMatch(keySegments[startIndex + i], parameterSegments[i])
+      ) {
         return false;
       }
     }
