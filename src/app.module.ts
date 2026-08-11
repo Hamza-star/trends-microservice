@@ -11,6 +11,7 @@ import { RolesModule } from './roles/roles.module';
 import { UsersModule } from './users/users.module';
 import { LabelsModule } from './labels/labels.module';
 import { AlarmsModule } from './alarms/alarms.module';
+import { AreasModule } from './areas/areas.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AlarmsModule } from './alarms/alarms.module';
     MenuModule,
     LabelsModule,
     AlarmsModule,
+    AreasModule,
   ],
   controllers: [AppController],
   providers: [AppService],
