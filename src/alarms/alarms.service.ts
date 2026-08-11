@@ -27,53 +27,14 @@ import { AlarmsType } from './schema/alarmsType.schema';
 import { Logic } from './schema/logic.schema';
 import { Threshold } from './schema/threshold.schema';
 import { paramsMapping } from 'src/constants/params-mapping';
-
-type PayloadMap = Record<string, number>;
-
-type AlarmConfigDocument = alarmsConfiguration & {
-  _id: Types.ObjectId;
-  alarmTypeId?: AlarmsType | Types.ObjectId;
-  alarmTriggerConfig?: AlarmRulesSet | Types.ObjectId;
-};
-
-export type TriggeredAlarmThreshold = {
-  threshold?: Threshold;
-  value?: number;
-  location?: string;
-  device?: string;
-  parameter?: string;
-};
-
-type LogicUpdatePayload = {
-  alarmLocation: string;
-  alarmSubLocation?: string;
-  alarmDevice?: string;
-  alarmParameter: string;
-  thresholds?: Threshold[];
-};
-
-interface LogicEvaluationStatus {
-  alarmLocation: string;
-  alarmSubLocation?: string;
-  alarmDevice?: string;
-  alarmParameter: string;
-  value?: number;
-  threshold?: Threshold;
-  isTriggered: boolean;
-}
-
-export interface TriggeredAlarmResponse {
-  alarmOccurrenceId: string | Types.ObjectId;
-  alarmOccurenceId: string | Types.ObjectId;
-  alarmName: string;
-  alarmStatus: boolean;
-  alarmType?: string;
-  priority?: number;
-  triggeredAt: Date;
-  snooze: boolean;
-  alarmAcknowledgeStatus?: string;
-  thresholds: TriggeredAlarmThreshold[];
-}
+import {
+  AlarmConfigDocument,
+  LogicEvaluationStatus,
+  LogicUpdatePayload,
+  PayloadMap,
+  TriggeredAlarmResponse,
+  TriggeredAlarmThreshold,
+} from './types/alarm-types';
 
 @Injectable()
 export class AlarmsService {

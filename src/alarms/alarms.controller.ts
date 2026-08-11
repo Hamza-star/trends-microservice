@@ -8,7 +8,7 @@ import { UpdateAlarmDto } from './dto/update-alarm.dto';
 import { AcknowledgeDto } from './dto/acknowledge.dto';
 import { AcknowledgeManyDto } from './dto/acknowledge-many.dto';
 import { SnoozeDto } from './dto/snooze.dto';
-import { TriggeredAlarmResponse } from './alarms.service';
+import { TriggeredAlarmResponse } from './types/alarm-types';
 @Controller('alarms')
 export class AlarmsController {
   constructor(private readonly alarmsService: AlarmsService) {}
