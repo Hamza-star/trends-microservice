@@ -24,7 +24,7 @@ export async function bootstrap() {
     app.useGlobalFilters(new HttpExceptionFilter());
 
     app.enableCors({
-      origin: process.env.FRONTEND_URL,
+      origin: ['http://localhost:3000', 'https://generic-ems.vercel.app'],
       credentials: true,
     });
 
