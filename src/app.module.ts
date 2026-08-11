@@ -26,6 +26,15 @@ import { AreasModule } from './areas/areas.module';
         uri:
           configService.get<string>('MONGODB_URI') ??
           'mongodb://127.0.0.1:27017/user-management-nestjs',
+          autoIndex: process.env.NODE_ENV !== 'production',
+        
+        // Maximum wait time to connect to database (10 seconds)
+        // If DB doesn't connect in 10 seconds → timeout error
+        connectTimeoutMS: 10000,
+        
+        // Maximum time for a single query to run (45 seconds)
+        // If query runs longer than 45 seconds → cancel it
+        socketTimeoutMS: 45000,
         connectionFactory: (connection) => {
           connection.set('strictPopulate', false);
           return connection;
