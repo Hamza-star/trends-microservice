@@ -10,10 +10,10 @@ import { LogicConfigurationDto } from "./logic-configuration.dto";
 
 export class ConfigAlarmDto {
   @IsMongoId()
-  alarmTypeId: string;  // Keep as string
+  alarmTypeId!: string;  // Keep as string
 
   @IsString()
-  alarmName: string;
+  alarmName!: string;
 
   // When creating alarms, matching is done by alarmLocation and alarmParameter
   // against underscore-delimited payload keys. These values should be provided
@@ -21,16 +21,16 @@ export class ConfigAlarmDto {
 
   @ValidateNested({ each: true })
   @Type(() => LogicDto)
-  Logics: LogicDto[];
+  Logics!: LogicDto[];
 
   @ValidateNested()
   @Type(() => LogicConfigurationDto)
-  LogicConfiguration: LogicConfigurationDto;
+  LogicConfiguration!: LogicConfigurationDto;
 
   @ValidateNested()
   @Type(() => AlarmTriggerConfigDto)
-  alarmTriggerConfig: AlarmTriggerConfigDto;
+  alarmTriggerConfig!: AlarmTriggerConfigDto;
 
   @IsString({ each: true })
-  acknowledgementActions: string[];
+  acknowledgementActions!: string[];
 }

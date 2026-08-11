@@ -8,6 +8,7 @@ import { UpdateAlarmDto } from './dto/update-alarm.dto';
 import { AcknowledgeDto } from './dto/acknowledge.dto';
 import { AcknowledgeManyDto } from './dto/acknowledge-many.dto';
 import { SnoozeDto } from './dto/snooze.dto';
+import { TriggeredAlarmResponse } from './alarms.service';
 @Controller('alarms')
 export class AlarmsController {
   constructor(private readonly alarmsService: AlarmsService) {}
@@ -27,125 +28,6 @@ export class AlarmsController {
     return this.alarmsService.getAllSuffixes();
   }
 
-  @Get('mapped-location')
-  getMappedLocation(): Record<string, string[]> {
-    return {
-      Z1: ['GW0', 'GW4'],
-      Z2: ['GW1', 'GW9', 'GW10', 'GW11', 'GW12'],
-      Z3: ['GW3', 'GW7'],
-      Z4: ['GW0', 'GW5'],
-      Z5: ['GW2'],
-    };
-  }
-  @Get('devices')
-  getAlarmDevices(): Record<string, string[]> {
-    return {
-      Z1: [
-        'EM01',
-        'EM02',
-        'EM03',
-        'EM04',
-        'EM05',
-        'EM06',
-        'EM07',
-        'EM08',
-        'EM09',
-        'EM10',
-        'EM11',
-        'EM12',
-        'EM13',
-        'EM14',
-        'EM15',
-        'EM16',
-        'EM17',
-        'EM18',
-        'EM19',
-        'EM20',
-        'EM21',
-        'EM22',
-        'FM01',
-        'FM02',
-        'FM03',
-      ],
-      Z2: [
-        'EM01',
-        'EM02',
-        'EM03',
-        'EM04',
-        'EM05',
-        'EM06',
-        'EM07',
-        'EM08',
-        'EM09',
-        'EM10',
-        'EM11',
-        'EM12',
-        'FM01',
-        'FM02',
-        'FM03',
-        'FM04',
-        'FM05',
-        'FM06',
-        'FM07',
-        'FM08',
-        'FM09',
-        'FM10',
-        'FM11',
-        'FM12',
-        'FM13',
-        'FM14',
-        'FM15',
-        'FM16',
-        'FM17',
-        'FM18',
-        'FM19',
-      ],
-      Z3: [
-        'EM01',
-        'EM02',
-        'EM03',
-        'EM04',
-        'EM05',
-        'EM06',
-        'EM07',
-        'EM08',
-        'EM09',
-        'EM10',
-        'EM11',
-        'FM01',
-        'FM02',
-        'FM03',
-        'FM04',
-        'FM05',
-        'FM06',
-      ],
-      Z4: [
-        'EM01',
-        'EM02',
-        'EM03',
-        'EM04',
-        'EM05',
-        'EM06',
-        'EM07',
-        'EM08',
-        'EM09',
-        'EM10',
-        'EM11',
-        'EM12',
-        'EM13',
-        'EM14',
-        'EM15',
-        'EM16',
-        'EM17',
-        'EM18',
-        'EM19',
-        'EM20',
-        'EM21',
-        'EM22',
-      ],
-      Z5: ['EM01', 'EM02', 'EM03', 'EM04', 'EM05', 'FM1', 'FM2', 'FM3'],
-    };
-  }
   // Types section
   @Get('types/names')
   getAllAlarmsTypes() {
@@ -208,7 +90,7 @@ export class AlarmsController {
   }
 
   @Get('active')
-  getActiveAlarms() {
+  getActiveAlarms(): Promise<TriggeredAlarmResponse[]> {
     return this.alarmsService.processActiveAlarms();
   }
 
@@ -230,7 +112,7 @@ export class AlarmsController {
     return this.alarmsService.acknowledgeOne(id, dto.action, dto.acknowledgedBy);
   }
 
-  // ✅ Acknowledge multiple occurrences
+  // - Acknowledge multiple occurrences
   @Patch('occurrences/acknowledge')
   async acknowledgeMany(@Body() dto: AcknowledgeManyDto) {
     return this.alarmsService.acknowledgeMany(dto.ids, dto.acknowledgedBy);

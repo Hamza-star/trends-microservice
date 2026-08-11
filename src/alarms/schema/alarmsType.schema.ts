@@ -4,16 +4,16 @@ import { Document } from "mongoose";
 @Schema({ collection: "alarmsType" })
 export class AlarmsType {
   @Prop({ required: true })
-  type: string;
+  type!: string;
 
   @Prop({ required: true })
-  priority: number;
+  priority!: number;
 
   @Prop({ required: true })
-  color: string;
+  color!: string;
 
   @Prop({ required: true })
-  code: string;
+  code!: string;
 
   @Prop({ enum: ["Single", "Both"], required: false })
   acknowledgeType?: "Single" | "Both";

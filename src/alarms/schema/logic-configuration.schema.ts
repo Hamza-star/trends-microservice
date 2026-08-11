@@ -6,7 +6,7 @@ export class LogicConfiguration {
   'All-True': boolean;
 
   @Prop()
-  AnyOneTrue: boolean;
+  AnyOneTrue!: boolean;
 }
 
 export const LogicConfigurationSchema = SchemaFactory.createForClass(LogicConfiguration);

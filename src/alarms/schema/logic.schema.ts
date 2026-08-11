@@ -4,19 +4,19 @@ import { Threshold } from './threshold.schema';
 @Schema({ _id: false })
 export class Logic {
   @Prop({ required: true })
-  alarmLocation: string;
+  alarmLocation!: string;
 
   @Prop()
-  alarmSubLocation: string;
+  alarmSubLocation?: string;
 
   @Prop()
-  alarmDevice: string;
+  alarmDevice?: string;
 
   @Prop({ required: true })
-  alarmParameter: string;
+  alarmParameter!: string;
 
   @Prop({ type: [Threshold], required: true })
-  thresholds: Threshold[];
+  thresholds!: Threshold[];
 }
 
 export const LogicSchema = SchemaFactory.createForClass(Logic);

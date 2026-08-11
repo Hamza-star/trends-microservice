@@ -6,19 +6,19 @@ import { Document, Types } from 'mongoose';
 @Schema({ _id: false, timestamps: true } )
 export class LogicStatus {
   @Prop({ required: true })
-  alarmLocation: string;
+  alarmLocation!: string;
 
   @Prop()
-  alarmSubLocation: string;
+  alarmSubLocation!: string;
 
   @Prop()
-  alarmDevice: string;
+  alarmDevice!: string;
 
   @Prop({ required: true })
-  alarmParameter: string;
+  alarmParameter!: string;
 
   @Prop({ required: true })
-  isTriggered: boolean;
+  isTriggered!: boolean;
 
   @Prop({ required: false })
   value?: number;
@@ -39,63 +39,63 @@ export const LogicStatusSchema = SchemaFactory.createForClass(LogicStatus);
 @Schema({ collection: 'alarmsOccurrence', timestamps: true })
 export class AlarmOccurrence {
   @Prop({ type: Date, required: true })
-  date: Date;
+  date!: Date;
 
   @Prop({ required: true })
-  alarmID: string;
+  alarmID!: string;
 
   @Prop({ type: Boolean, default: false })
-  alarmStatus: boolean;
+  alarmStatus!: boolean;
 
-  // ✅ Link to config
+  // - Link to config
   @Prop({ type: Types.ObjectId, ref: 'alarmsConfiguration' })
-  alarmConfigId: Types.ObjectId;
+  alarmConfigId!: Types.ObjectId;
 
-  // ✅ Link to ruleset (for persistence time, occursCount)
+  // - Link to ruleset (for persistence time, occursCount)
   @Prop({ type: Types.ObjectId, ref: 'AlarmRulesSet' })
-  alarmRulesetId: Types.ObjectId | null;
+  alarmRulesetId!: Types.ObjectId | null;
 
-  // ✅ Link to alarm type
+  // - Link to alarm type
   @Prop({ type: Types.ObjectId, ref: 'AlarmsType' })
-  alarmTypeId: Types.ObjectId | null;
+  alarmTypeId!: Types.ObjectId | null;
 
-  // ✅ Store ALL logics with their status - THIS IS THE MAIN DATA NOW
+  // - Store ALL logics with their status - THIS IS THE MAIN DATA NOW
   @Prop({ type: [LogicStatusSchema], required: true })
-  logicStatuses: LogicStatus[];
+  logicStatuses!: LogicStatus[];
 
   @Prop({
     type: String,
     enum: ['Acknowledged', 'Unacknowledged'],
     default: 'Unacknowledged',
   })
-  alarmAcknowledgeStatus: 'Acknowledged' | 'Unacknowledged';
+  alarmAcknowledgeStatus!: 'Acknowledged' | 'Unacknowledged';
 
   @Prop({ type: String, default: '' })
-  alarmAcknowledgmentAction: string;
+  alarmAcknowledgmentAction!: string;
 
   @Prop({ type: Types.ObjectId, ref: 'Users' })
-  alarmAcknowledgedBy: Types.ObjectId | null;
+  alarmAcknowledgedBy!: Types.ObjectId | null;
 
   @Prop({ type: Number, default: 0 })
-  alarmAcknowledgedDelay: number;
+  alarmAcknowledgedDelay!: number;
 
   @Prop({ type: Number, default: 0 })
-  alarmAge: number;
+  alarmAge!: number;
 
   @Prop({ type: Number, default: 0 })
-  alarmDuration: number;
+  alarmDuration!: number;
 
   @Prop({ type: String })
-  alarmAcknowledgmentType: 'Single' | 'Both' | null;
+  alarmAcknowledgmentType!: 'Single' | 'Both' | null;
 
   @Prop({ type: Boolean, default: false })
-  alarmSnooze: boolean;
+  alarmSnooze!: boolean;
 
   @Prop({ type: Date })
-  snoozeAt: Date;
+  snoozeAt!: Date;
 
   @Prop({ type: Number })
-  snoozeDuration: number;
+  snoozeDuration!: number;
 
   @Prop({ type: Date })
   resolveTime?: Date;

@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 
 @Schema({ collection: 'alarmsRuleSet' })
 export class AlarmRulesSet {
-  _id?: Types.ObjectId; // ✅ Add this back
+  _id?: Types.ObjectId; // - Add this back
   @Prop() 
   persistenceTime?: number;
   
@@ -14,7 +14,7 @@ export class AlarmRulesSet {
   occursWithin?: number;
   
   @Prop({ enum: ['&&', '||', '', 'null'] })
-  conditionType: '&&' | '||' | '' | 'null';
+  conditionType!: '&&' | '||' | '' | 'null';
   
   // thresholds removed from here since it's now in Logic schema
 }

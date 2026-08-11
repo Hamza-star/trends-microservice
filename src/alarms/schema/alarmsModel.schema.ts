@@ -5,14 +5,14 @@ import { AlarmOccurrence } from './alarmOccurences.schema';
 @Schema({ collection: 'alarms', timestamps: true })
 export class Alarms {
   @Prop({ type: Types.ObjectId, ref: 'alarmsConfiguration', required: true })
-  alarmConfigId: Types.ObjectId;
+  alarmConfigId!: Types.ObjectId;
 
   @Prop({ type: Number, default: 1 })
-  alarmOccurrenceCount: number;
+  alarmOccurrenceCount!: number;
 
   // 👇 New field: count of acknowledgements
   @Prop({ type: Number, default: 0 })
-  alarmAcknowledgementStatusCount: number;
+  alarmAcknowledgementStatusCount!: number;
 
   @Prop({ type: Date })
   alarmFirstOccurrence?: Date;
@@ -24,7 +24,7 @@ export class Alarms {
     type: [{ type: Types.ObjectId, ref: AlarmOccurrence.name }],
     default: [],
   })
-  alarmOccurrences: Types.ObjectId[];
+  alarmOccurrences!: Types.ObjectId[];
 }
 
 export type AlarmsDocument = Alarms & Document;

@@ -5,6 +5,7 @@ import { HttpService } from '@nestjs/axios';
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -27,11 +28,52 @@ import { Logic } from './schema/logic.schema';
 import { Threshold } from './schema/threshold.schema';
 import { paramsMapping } from 'src/constants/params-mapping';
 
-type AlarmConfigWithPopulate = alarmsConfiguration & {
-  _id?: any;
-  alarmTriggerConfig?: AlarmRulesSet | null;
-  alarmTypeId?: Partial<AlarmsType> | null;
+type PayloadMap = Record<string, number>;
+
+type AlarmConfigDocument = alarmsConfiguration & {
+  _id: Types.ObjectId;
+  alarmTypeId?: AlarmsType | Types.ObjectId;
+  alarmTriggerConfig?: AlarmRulesSet | Types.ObjectId;
 };
+
+export type TriggeredAlarmThreshold = {
+  threshold?: Threshold;
+  value?: number;
+  location?: string;
+  device?: string;
+  parameter?: string;
+};
+
+type LogicUpdatePayload = {
+  alarmLocation: string;
+  alarmSubLocation?: string;
+  alarmDevice?: string;
+  alarmParameter: string;
+  thresholds?: Threshold[];
+};
+
+interface LogicEvaluationStatus {
+  alarmLocation: string;
+  alarmSubLocation?: string;
+  alarmDevice?: string;
+  alarmParameter: string;
+  value?: number;
+  threshold?: Threshold;
+  isTriggered: boolean;
+}
+
+export interface TriggeredAlarmResponse {
+  alarmOccurrenceId: string | Types.ObjectId;
+  alarmOccurenceId: string | Types.ObjectId;
+  alarmName: string;
+  alarmStatus: boolean;
+  alarmType?: string;
+  priority?: number;
+  triggeredAt: Date;
+  snooze: boolean;
+  alarmAcknowledgeStatus?: string;
+  thresholds: TriggeredAlarmThreshold[];
+}
 
 @Injectable()
 export class AlarmsService {
@@ -50,8 +92,7 @@ export class AlarmsService {
 
   private readonly intervalsSec = [5, 15, 30, 60, 120];
   private readonly Time = [1, 2, 3, 4, 5];
-
-  private notificationCache = new Map<string, number>();
+  private readonly logger = new Logger(AlarmsService.name);
 
   async getAlarmsTypeName(): Promise<string[]> {
     const alarmsType = await this.alarmTypeModel
@@ -132,19 +173,14 @@ export class AlarmsService {
 
   async addAlarm(dto: ConfigAlarmDto) {
     // Determine conditionType from LogicConfiguration
-    let conditionType: '&&' | '||' | '' | 'null' = 'null';
-    if (dto.LogicConfiguration['All-True'] === true) {
-      conditionType = '&&';
-    } else if (dto.LogicConfiguration.AnyOneTrue === true) {
-      conditionType = '||';
-    }
+    const conditionType = this.getConditionType(dto.LogicConfiguration);
 
     // Save trigger config ruleset
     const ruleset = new this.alarmsRulesSetModel({
       persistenceTime: dto.alarmTriggerConfig.persistenceTime,
       occursCount: dto.alarmTriggerConfig.occursCount,
       occursWithin: dto.alarmTriggerConfig.occursWithin,
-      conditionType: conditionType,
+      conditionType,
     });
 
     await ruleset.save();
@@ -197,7 +233,7 @@ export class AlarmsService {
       throw new NotFoundException(`Alarm with ID ${alarmConfigId} not found`);
     }
 
-    const updateData: any = { ...restUpdateData };
+    const updateData: Partial<alarmsConfiguration> = { ...restUpdateData };
 
     // Handle alarmTypeId update
     if (alarmTypeId) {
@@ -214,7 +250,8 @@ export class AlarmsService {
         alarmLocation: logic.alarmLocation.startsWith('ER_')
           ? logic.alarmLocation
           : `${logic.alarmLocation}`,
-      }));
+        thresholds: logic.thresholds || [],
+      })) as Logic[];
       updateData.Logics = enhancedLogics;
     }
 
@@ -224,30 +261,14 @@ export class AlarmsService {
         let rulesetId = existingAlarm.alarmTriggerConfig?.toString();
 
         if (rulesetId && Types.ObjectId.isValid(rulesetId)) {
-          // Determine conditionType from LogicConfiguration if provided
-          let conditionType: '&&' | '||' | '' | 'null' = 'null';
+          const conditionType = this.getConditionType(
+            dto.LogicConfiguration || existingAlarm.LogicConfiguration,
+          );
 
-          if (dto.LogicConfiguration) {
-            if (dto.LogicConfiguration['All-True'] === true) {
-              conditionType = '&&';
-            } else if (dto.LogicConfiguration.AnyOneTrue === true) {
-              conditionType = '||';
-            }
-          } else if (existingAlarm.LogicConfiguration) {
-            // Use existing LogicConfiguration if not provided in update
-            if (existingAlarm.LogicConfiguration['All-True'] === true) {
-              conditionType = '&&';
-            } else if (existingAlarm.LogicConfiguration.AnyOneTrue === true) {
-              conditionType = '||';
-            }
-          }
-
-          const rulesetUpdate: any = { ...alarmTriggerConfig };
-
-          // Add conditionType if we determined it
-          if (conditionType !== 'null') {
-            rulesetUpdate.conditionType = conditionType;
-          }
+          const rulesetUpdate: Partial<AlarmRulesSet> = {
+            ...alarmTriggerConfig,
+            conditionType,
+          };
 
           await this.alarmsRulesSetModel.findByIdAndUpdate(
             rulesetId,
@@ -258,12 +279,7 @@ export class AlarmsService {
           updateData.alarmTriggerConfig = new Types.ObjectId(rulesetId);
         } else {
           // If no ruleset exists, create a new one
-          const conditionType =
-            dto.LogicConfiguration?.['All-True'] === true
-              ? '&&'
-              : dto.LogicConfiguration?.AnyOneTrue === true
-                ? '||'
-                : 'null';
+          const conditionType = this.getConditionType(dto.LogicConfiguration);
 
           const newRuleset = new this.alarmsRulesSetModel({
             ...alarmTriggerConfig,
@@ -286,12 +302,7 @@ export class AlarmsService {
 
       // If alarmTriggerConfig is being updated separately, also update its conditionType
       if (alarmTriggerConfig && existingAlarm.alarmTriggerConfig) {
-        const conditionType =
-          dto.LogicConfiguration['All-True'] === true
-            ? '&&'
-            : dto.LogicConfiguration.AnyOneTrue === true
-              ? '||'
-              : 'null';
+        const conditionType = this.getConditionType(dto.LogicConfiguration);
 
         await this.alarmsRulesSetModel.findByIdAndUpdate(
           existingAlarm.alarmTriggerConfig,
@@ -562,6 +573,20 @@ export class AlarmsService {
     return thresholdResults.every(Boolean);
   }
 
+  private getConditionType(
+    logicConfiguration?: { 'All-True'?: boolean; AnyOneTrue?: boolean },
+  ): '&&' | '||' | 'null' {
+    if (logicConfiguration?.['All-True'] === true) {
+      return '&&';
+    }
+
+    if (logicConfiguration?.AnyOneTrue === true) {
+      return '||';
+    }
+
+    return 'null';
+  }
+
   private getTriggeredThreshold(
     value: number,
     thresholds: Threshold[],
@@ -613,136 +638,14 @@ export class AlarmsService {
   }
 
   /**
-   * Upsert an active alarm event for the given alarm configuration.
-   * Now handles multiple Logics and LogicConfiguration
+   * Deactivate alarm occurrences for configurations that are no longer active.
+   * This updates the last occurrence, duration, and resolve time.
    */
-  private async upsertTriggeredAlarm(
-    alarmConfig: AlarmConfigWithPopulate,
-    logicStatuses: {
-      logic: Logic;
-      isTriggered: boolean;
-      triggeredThreshold: Threshold | null;
-      value: number | null;
-      matchedKey?: string;
-    }[],
-    primaryTriggeredLogic: Logic,
-    primaryTriggeredThreshold: Threshold,
-    primaryValue: number,
-  ): Promise<{ event: any; occurrence: AlarmsOccurrenceDocument } | null> {
+
+  private async deactivateResolvedAlarms(activeConfigIds: Set<string>) {
     const now = new Date();
-    const configId = alarmConfig._id;
 
-    // Get the ruleset ID - handle both ObjectId and populated object
-    let alarmRulesetId: Types.ObjectId | null = null;
-    if (alarmConfig.alarmTriggerConfig) {
-      if (alarmConfig.alarmTriggerConfig instanceof Types.ObjectId) {
-        alarmRulesetId = alarmConfig.alarmTriggerConfig;
-      } else if (alarmConfig.alarmTriggerConfig._id) {
-        alarmRulesetId = alarmConfig.alarmTriggerConfig._id;
-      }
-    }
-
-    let occurrence = await this.alarmOccurrenceModel.findOne({
-      alarmConfigId: configId,
-      alarmStatus: true,
-    });
-
-    let isNewOccurrence = false;
-
-    // Prepare logic statuses for storage
-    const storedLogicStatuses = logicStatuses.map((ls) => {
-      const status: any = {
-        alarmLocation: ls.logic.alarmLocation,
-        alarmSubLocation: ls.logic.alarmSubLocation,
-        alarmDevice: ls.logic.alarmDevice,
-        alarmParameter: ls.logic.alarmParameter,
-        isTriggered: ls.isTriggered,
-      };
-
-      // Only add value if it exists
-      if (ls.value !== null && ls.value !== undefined) {
-        status.value = ls.value;
-      }
-
-      // Only add threshold if it exists and is not null
-      if (ls.triggeredThreshold) {
-        status.threshold = {
-          value: ls.triggeredThreshold.value,
-          operator: ls.triggeredThreshold.operator,
-        };
-      }
-
-      return status;
-    });
-
-    if (!occurrence) {
-      const customId = await this.generateCustomAlarmId();
-      if (!customId) throw new Error('Alarm ID limit reached (ALM99-999)');
-
-      const occurrenceData: any = {
-        alarmID: customId,
-        date: now,
-        alarmConfigId: configId,
-        alarmAcknowledgeStatus: 'Unacknowledged',
-        alarmAcknowledgmentAction: '',
-        alarmAcknowledgedBy: null,
-        alarmAcknowledgedDelay: 0,
-        alarmAge: 0,
-        alarmDuration: 0,
-        alarmSnooze: false,
-        snoozeAt: null,
-        snoozeDuration: null,
-        logicStatuses: storedLogicStatuses,
-        alarmStatus: true,
-      };
-
-      // Only add if not null
-      if (alarmRulesetId) {
-        occurrenceData.alarmRulesetId = alarmRulesetId;
-      }
-
-      if (alarmConfig.alarmTypeId?._id) {
-        occurrenceData.alarmTypeId = alarmConfig.alarmTypeId._id;
-      }
-
-      if (alarmConfig.alarmTypeId?.acknowledgeType) {
-        occurrenceData.alarmAcknowledgmentType =
-          alarmConfig.alarmTypeId.acknowledgeType;
-      }
-
-      occurrence = await this.alarmOccurrenceModel.create(occurrenceData);
-      isNewOccurrence = true;
-    } else {
-      // Update existing occurrence
-      occurrence.logicStatuses = storedLogicStatuses as any;
-      // occurrence.alarmDuration = now.getTime() - occurrence.date.getTime();
-      occurrence.alarmDuration = this.calculateDuration(occurrence.date);
-      await occurrence.save();
-    }
-
-    const eventUpdate: any = {
-      $set: { alarmLastOccurrence: now },
-      $setOnInsert: { alarmFirstOccurrence: now },
-      $addToSet: { alarmOccurrences: occurrence._id },
-    };
-
-    if (isNewOccurrence) {
-      eventUpdate.$inc = { alarmOccurrenceCount: 1 };
-    }
-
-    const event = await this.alarmsEventModel.findOneAndUpdate(
-      { alarmConfigId: configId },
-      eventUpdate,
-      { new: true, upsert: true },
-    );
-
-    return { event, occurrence };
-  }
-
-  async deactivateResolvedAlarms(activeConfigIds: Set<string>) {
-  const now = new Date();
-
-  const activeEvents = await this.alarmsEventModel
+    const activeEvents = await this.alarmsEventModel
     .find({})
     .populate({
       path: 'alarmOccurrences',
@@ -772,13 +675,14 @@ export class AlarmsService {
               {
                 alarmStatus: false,
                 alarmDuration: durationSec,
-                resolveTime: now, // ✅ Set resolve time
+                resolveTime: now, // - Set resolve time
               },
             );
           } catch (err: any) {
-            console.error(
-              '⚠ Failed to update occurrence duration:',
+            this.logger.error(
+              'Failed to update occurrence duration',
               err?.message ?? err,
+              err,
             );
           }
         }
@@ -798,8 +702,10 @@ export class AlarmsService {
   async processActiveAlarms() {
     const allPayloads = await this.fetchAlarmPayloads();
 
-    console.log('🔔 Active alarm payload count:', Object.keys(allPayloads).length);
-    console.log('🔔 Active alarm payload keys:', Object.keys(allPayloads).slice(0, 25));
+    this.logger.debug('Active alarm payload count', {
+      count: Object.keys(allPayloads).length,
+      sampleKeys: Object.keys(allPayloads).slice(0, 25),
+    });
 
     if (!Object.keys(allPayloads).length) {
       return [];
@@ -810,16 +716,16 @@ export class AlarmsService {
       this.alarmOccurrenceModel.find({ alarmStatus: true }).lean(),
     ]);
 
-    console.log('🔔 Loaded alarm configs:', alarms.length);
+    this.logger.debug('Loaded alarm configs', { count: alarms.length });
 
-    const triggeredAlarms: any[] = [];
+    const triggeredAlarms: TriggeredAlarmResponse[] = [];
     const activeConfigIds = new Set<string>();
 
-    for (const alarm of alarms as any[]) {
+    for (const alarm of alarms as AlarmConfigDocument[]) {
       if (!alarm.Logics?.length) continue;
 
       const activeOccurrence = activeOccurrences.find(
-        (o: any) => o.alarmConfigId?.toString() === alarm._id.toString(),
+        (o) => o.alarmConfigId?.toString() === alarm._id.toString(),
       );
 
       if (await this.isAlarmSnoozed(activeOccurrence)) {
@@ -864,7 +770,7 @@ export class AlarmsService {
 
   private async fetchAlarmPayloads(): Promise<Record<string, number>> {
     const alarmsLinksStr = process.env.NODERED_URL;
-    console.log('NODERED_URL:', alarmsLinksStr);
+    this.logger.debug(`NODERED_URL loaded: ${!!alarmsLinksStr}`);
 
     if (!alarmsLinksStr) {
       throw new BadRequestException('NODERED_URL not configured');
@@ -890,7 +796,7 @@ export class AlarmsService {
         );
         return resp.data;
       } catch (err: any) {
-        console.error('Fetch error:', err?.message ?? err);
+        this.logger.error('Fetch error', err?.message ?? err, err);
         return null;
       }
     });
@@ -899,19 +805,21 @@ export class AlarmsService {
 
     results.forEach((rawData, index) => {
       if (!rawData) {
-        console.warn(`⚠️ Payload fetch returned empty for link index ${index}:`, alarmsLinks[index]);
+        this.logger.warn(`Payload fetch returned empty for link index ${index}: ${alarmsLinks[index]}`);
         return;
       }
-      console.log(`ℹ️ Payload fetched successfully for link index ${index}:`, alarmsLinks[index]);
-      console.log(`ℹ️ Payload type for link index ${index}:`, Array.isArray(rawData) ? 'array' : typeof rawData);
+      this.logger.debug(`Payload fetched successfully for link index ${index}: ${alarmsLinks[index]}`);
+      this.logger.debug(`Payload type for link index ${index}: ${Array.isArray(rawData) ? 'array' : typeof rawData}`);
       this.processDataStructure(rawData, allPayloads);
     });
 
-    console.log('🔔 Aggregated payload count after processing:', Object.keys(allPayloads).length);
+    this.logger.debug(`Aggregated payload count after processing: ${Object.keys(allPayloads).length}`);
     return allPayloads;
   }
 
-  private async isAlarmSnoozed(activeOccurrence: any): Promise<boolean> {
+  private async isAlarmSnoozed(
+    activeOccurrence?: AlarmsOccurrenceDocument | null | undefined,
+  ): Promise<boolean> {
     if (!activeOccurrence?.alarmSnooze || !activeOccurrence?.snoozeAt) {
       return false;
     }
@@ -933,25 +841,28 @@ export class AlarmsService {
     return false;
   }
 
-  private evaluateLogicStatus(logic: Logic, payloads: Record<string, number>) {
+  private evaluateLogicStatus(
+    logic: Logic,
+    payloads: PayloadMap,
+  ): LogicEvaluationStatus {
     const matched = this.findMatchingData(payloads, logic);
-    const matchedValue = matched?.value ?? null;
+    const matchedValue = matched?.value;
     const triggeredThreshold =
-      matchedValue !== null
+      matchedValue !== undefined
         ? this.getTriggeredThreshold(matchedValue, logic.thresholds)
         : null;
 
-    const status = {
+    const status: LogicEvaluationStatus = {
       alarmLocation: logic.alarmLocation,
       alarmSubLocation: logic.alarmSubLocation,
       alarmDevice: logic.alarmDevice,
       alarmParameter: logic.alarmParameter,
       value: matchedValue,
-      threshold: triggeredThreshold,
+      threshold: triggeredThreshold ?? undefined,
       isTriggered: !!triggeredThreshold,
     };
 
-    console.log('🔍 Logic evaluation:', {
+    this.logger.debug('Logic evaluation', {
       location: logic.alarmLocation,
       subLocation: logic.alarmSubLocation,
       device: logic.alarmDevice,
@@ -976,7 +887,9 @@ export class AlarmsService {
     return logicStatuses.some((status) => status.isTriggered);
   }
 
-  private async resolveActiveOccurrence(activeOccurrence: any) {
+  private async resolveActiveOccurrence(
+    activeOccurrence: AlarmsOccurrenceDocument,
+  ) {
     const triggerTime = new Date(activeOccurrence.date).getTime();
     const durationInSeconds = Math.floor((Date.now() - triggerTime) / 1000);
 
@@ -993,14 +906,14 @@ export class AlarmsService {
   }
 
   private async createOrUpdateActiveOccurrence(
-    alarm: any,
-    activeOccurrence: any,
-    logicStatuses: any[],
-  ) {
+    alarm: AlarmConfigDocument,
+    activeOccurrence: AlarmsOccurrenceDocument | null | undefined,
+    logicStatuses: LogicEvaluationStatus[],
+  ): Promise<AlarmsOccurrenceDocument | null> {
     if (!activeOccurrence) {
-      return this.alarmOccurrenceModel.create({
+      return await this.alarmOccurrenceModel.create({
         alarmConfigId: alarm._id,
-        alarmID: alarm._id,
+        alarmID: alarm._id.toString(),
         alarmStatus: true,
         logicStatuses,
         date: new Date(),
@@ -1018,20 +931,21 @@ export class AlarmsService {
       },
     );
 
-    return this.alarmOccurrenceModel.findById(activeOccurrence._id).lean();
+    return this.alarmOccurrenceModel.findById(activeOccurrence._id) as Promise<AlarmsOccurrenceDocument>;
   }
 
   private buildTriggeredAlarmResponse(
-    alarm: any,
-    occurrence: any,
-    logicStatuses: any[],
-  ) {
+    alarm: AlarmConfigDocument,
+    occurrence: AlarmsOccurrenceDocument,
+    logicStatuses: LogicEvaluationStatus[],
+  ): TriggeredAlarmResponse {
     return {
+      alarmOccurrenceId: occurrence._id,
       alarmOccurenceId: occurrence._id,
       alarmName: alarm.alarmName,
       alarmStatus: true,
-      alarmType: alarm.alarmTypeId?.type,
-      priority: alarm.alarmTypeId?.priority,
+      alarmType: (alarm.alarmTypeId as AlarmsType)?.type,
+      priority: (alarm.alarmTypeId as AlarmsType)?.priority,
       triggeredAt: occurrence.date,
       snooze: occurrence.alarmSnooze || false,
       alarmAcknowledgeStatus: occurrence.alarmAcknowledgeStatus,
@@ -1051,15 +965,12 @@ export class AlarmsService {
     try {
       const suffixes = new Set<string>();
 
-      // paramsMapping me se sirf values lo
       Object.values(paramsMapping).forEach((fieldArray) => {
         fieldArray.forEach((field) => {
-          // Agar field EM ke pattern ke sath hai, suffix extract karo
           const emMatch = field.match(/EM\d+_(.+)/);
           if (emMatch && emMatch[1]) {
             suffixes.add(emMatch[1]);
           } else {
-            // Warna poora field as suffix add karo
             suffixes.add(field);
           }
         });
@@ -1067,7 +978,7 @@ export class AlarmsService {
 
       return Array.from(suffixes);
     } catch (error) {
-      console.error('Error:', error);
+      this.logger.error('Error extracting suffixes', error);
       return [];
     }
   }
@@ -1090,7 +1001,7 @@ export class AlarmsService {
       // Handle single object
       this.flattenObject(data, target);
     } else {
-      console.warn('Unsupported data type:', typeof data);
+      this.logger.warn(`Unsupported data type: ${typeof data}`);
     }
   }
 
@@ -1142,7 +1053,7 @@ export class AlarmsService {
       targetParameter,
     );
 
-    console.log('🔍 Looking for:', {
+    this.logger.debug('Looking for alarm key match', {
       location: targetLocation,
       parameter: targetParameter,
       locationSegments,
@@ -1158,7 +1069,7 @@ export class AlarmsService {
       if (
         this.matchesPayloadKey(keySegments, locationSegments, parameterSegments)
       ) {
-        console.log('✅ Found match for logic:', {
+        this.logger.debug('Found match for logic', {
           logic: targetLocation,
           payloadKey: key,
           keySegments,
@@ -1169,7 +1080,7 @@ export class AlarmsService {
       }
     }
 
-    console.log('🚫 No payload match found for logic:', {
+    this.logger.debug('No payload match found for logic', {
       location: targetLocation,
       parameter: targetParameter,
       locationSegments,
@@ -1331,7 +1242,7 @@ async gethistoricalAlarms(filters: any = {}) {
       return { data: [], total: 0 };
     }
 
-    // ✅ FIX: Calculate correct duration using resolveTime
+    // - FIX: Calculate correct duration using resolveTime
     const now = new Date();
     const occurrencesWithCorrectDuration = occurrences.map((occ) => {
       const triggerTime = new Date(occ.date).getTime();
@@ -1343,11 +1254,11 @@ async gethistoricalAlarms(filters: any = {}) {
         // Active alarm - real-time duration
         calculatedDuration = Math.floor((currentTime - triggerTime) / 1000);
       } else {
-        // ✅ Resolved alarm - use resolveTime if available
+        // - Resolved alarm - use resolveTime if available
         let resolvedTime = currentTime;
         
         if (occ.resolveTime) {
-          // ✅ Use resolveTime (set once when alarm resolved)
+          // - Use resolveTime (set once when alarm resolved)
           resolvedTime = new Date(occ.resolveTime).getTime();
         } else if (occ.updatedAt) {
           // Fallback to updatedAt
@@ -1452,7 +1363,7 @@ async gethistoricalAlarms(filters: any = {}) {
       total: result.length,
     };
   } catch (error) {
-    console.error('Error fetching historical alarms:', error);
+    this.logger.error('Error fetching historical alarms', error);
     throw error;
   }
 }
