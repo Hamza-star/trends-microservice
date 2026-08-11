@@ -19,14 +19,5 @@ export class CreateAreaDto {
   @IsOptional()
   @IsMongoId({ message: 'Invalid parent ID format' })
   parentId?: string;
-
-  @ApiProperty({ 
-    description: 'Full path array of area names',
-    example: ['Energy Usage Report', 'Shift Wise'],
-    type: [String]
-  })
-  @IsArray({ message: 'Path must be an array' })
-  @ArrayNotEmpty({ message: 'Path cannot be empty' })
-  @IsString({ each: true, message: 'Each path item must be a string' })
-  path!: string[];
+ 
 }

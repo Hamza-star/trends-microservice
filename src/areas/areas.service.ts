@@ -13,31 +13,33 @@ export class AreaService {
   ) {}
 
   /**
-   * Create a new area
+   * Create a new area with auto-generated path
    */
   async create(createAreaDto: CreateAreaDto): Promise<AreaResponse> {
     try {
-      const { name, parentId, path } = createAreaDto;
+      const { name, parentId } = createAreaDto; // - path removed
 
       // Validate unique name at same level
       await this.validateUniqueName(name, parentId);
 
       let level = 0;
       let parentObjectId: Types.ObjectId | null = null;
+      let path = [name]; // - Auto-generate path for root
 
       // If parentId provided, validate parent exists
       if (parentId) {
         const parent = await this.findParent(parentId);
         level = parent.level + 1;
         parentObjectId = new Types.ObjectId(parentId);
+        path = [...parent.path, name]; // - Auto-generate path from parent
       }
 
-      // Create new area
+      // Create new area with auto-generated path
       const newArea = new this.areaModel({
         name,
         parentId: parentObjectId,
         level,
-        path,
+        path, // - Auto-generated path
       });
 
       const savedArea = await newArea.save();
@@ -81,22 +83,52 @@ export class AreaService {
         throw new NotFoundException(`Area with ID "${id}" not found`);
       }
 
+      // Store old path for descendant updates
+      const oldPath = [...area.path];
+
       // Handle parent change
       if (updateAreaDto.parentId && updateAreaDto.parentId !== area.parentId?.toString()) {
-        await this.handleParentChange(area, updateAreaDto.parentId);
+        const newParent = await this.findParent(updateAreaDto.parentId);
+        
+        // Check if new parent is not a descendant
+        if (await this.isDescendant(area._id, newParent._id)) {
+          throw new BadRequestException('Cannot move area to its own descendant');
+        }
+
+        area.parentId = new Types.ObjectId(updateAreaDto.parentId);
+        area.level = newParent.level + 1;
+        area.path = [...newParent.path, area.name];
+        
         delete updateAreaDto.parentId;
       }
 
       // Handle name change
       if (updateAreaDto.name && updateAreaDto.name !== area.name) {
         await this.validateUniqueName(updateAreaDto.name, area.parentId?.toString());
-        await this.updateChildPaths(area._id, area.path, updateAreaDto.name);
+        
+        // Update path with new name
+        const newPath = [...area.path.slice(0, -1), updateAreaDto.name];
+        area.name = updateAreaDto.name;
+        area.path = newPath;
+        
+        delete updateAreaDto.name;
       }
 
-      // Apply updates
-      Object.assign(area, updateAreaDto);
+      // Apply other updates
+      if (Object.keys(updateAreaDto).length > 0) {
+        Object.assign(area, updateAreaDto);
+      }
+
       area.updatedAt = new Date();
       await area.save();
+
+      // Update all descendants if path changed
+      if (oldPath.join(',') !== area.path.join(',')) {
+        await this.updateDescendantPaths(area, oldPath);
+        // Refresh area data
+        const updatedArea = await this.areaModel.findById(id);
+        return this.formatAreaResponse(updatedArea);
+      }
 
       return this.formatAreaResponse(area);
     } catch (error) {
@@ -211,25 +243,6 @@ export class AreaService {
   }
 
   /**
-   * Handle parent change
-   */
-  private async handleParentChange(area: Area, newParentId: string): Promise<void> {
-    const newParent = await this.findParent(newParentId);
-    
-    // Check if new parent is not a descendant
-    if (await this.isDescendant(area._id, newParent._id)) {
-      throw new BadRequestException('Cannot move area to its own descendant');
-    }
-
-    area.parentId = new Types.ObjectId(newParentId);
-    area.level = newParent.level + 1;
-    area.path = [...newParent.path, area.name];
-
-    // Update all descendants
-    await this.updateDescendantPaths(area);
-  }
-
-  /**
    * Check if one area is descendant of another
    */
   private async isDescendant(ancestorId: Types.ObjectId, targetId: Types.ObjectId): Promise<boolean> {
@@ -239,43 +252,32 @@ export class AreaService {
     const ancestor = await this.areaModel.findById(ancestorId);
     if (!ancestor) return false;
 
-    return target.path.some(p => p === ancestor.name);
+    // Check if ancestor path is prefix of target path
+    const ancestorPathStr = ancestor.path.join(',');
+    const targetPathStr = target.path.join(',');
+    
+    return targetPathStr.startsWith(ancestorPathStr) && ancestorPathStr !== targetPathStr;
   }
 
   /**
    * Update descendant paths
    */
-  private async updateDescendantPaths(area: Area): Promise<void> {
-    const descendants = await this.areaModel.find({ 
-      'path': { $regex: `^${area.path.slice(0, -1).join(',')}` }
+  private async updateDescendantPaths(area: Area, oldPath: string[]): Promise<void> {
+    // Find all descendants using old path
+    const descendants = await this.areaModel.find({
+      'path': { $regex: `^${oldPath.join(',')}` },
+      _id: { $ne: area._id }
     });
 
     for (const desc of descendants) {
-      const oldPath = desc.path;
-      const newPath = [...area.path, ...oldPath.slice(area.path.length - 1)];
+      // Calculate remaining path after the old path
+      const remainingPath = desc.path.slice(oldPath.length);
+      // Build new path with new area path + remaining
+      const newPath = [...area.path, ...remainingPath];
+      
       desc.path = newPath;
-      desc.level = area.level + (oldPath.length - area.path.length + 1);
+      desc.level = area.level + remainingPath.length;
       await desc.save();
-    }
-  }
-
-  /**
-   * Update child paths when name changes
-   */
-  private async updateChildPaths(
-    parentId: Types.ObjectId,
-    oldPath: string[],
-    newName: string
-  ): Promise<void> {
-    const children = await this.areaModel.find({ parentId });
-    
-    for (const child of children) {
-      const newPath = child.path.map((p, index) => 
-        index === oldPath.length - 1 ? newName : p
-      );
-      child.path = newPath;
-      await child.save();
-      await this.updateChildPaths(child._id, child.path, newName);
     }
   }
 
@@ -328,8 +330,8 @@ export class AreaService {
       parentId: area.parentId ? area.parentId.toString() : null,
       level: area.level,
       path: area.path,
-      // createdAt: area.createdAt || area.createdAt,
-      // updatedAt: area.updatedAt || area.updatedAt,
+      // createdAt: area.createdAt || new Date(),
+      // updatedAt: area.updatedAt || new Date(),
     };
   }
 
