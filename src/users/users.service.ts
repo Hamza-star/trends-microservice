@@ -153,214 +153,6 @@ export class UsersService {
     return users;
   }
 
-  // async findById(id: string): Promise<any> {
-  //   const user = await this.userModel
-  //     .findById(id)
-  //     .populate({
-  //       path: 'role',
-  //       // Remove privelleges populate
-  //     })
-  //     .exec();
-
-  //   if (!user) throw new NotFoundException('User not found');
-
-  //   // Get role ke saath menuIds
-  //   const role = user.role as any;
-
-  //   let menuTree: any[] = [];
-
-  //   // Agar role ke paas menuIds hain to unka tree banao
-  //   if (role && role.menuIds && role.menuIds.length > 0) {
-  //     // Populate menuIds se poora menu data lao
-  //     const menus = await this.menuModel
-  //       .find({
-  //         _id: { $in: role.menuIds },
-  //       })
-  //       .lean();
-
-  //     // Collect all menu IDs including ancestors
-  //     const allMenuIds = new Set<string>();
-  //     const allMenus: any[] = [];
-
-  //     // First, add all assigned menus
-  //     for (const menu of menus) {
-  //       allMenuIds.add(menu._id.toString());
-  //       allMenus.push(menu);
-
-  //       // Fetch and add all ancestors of this menu
-  //       if (menu.ancestors && Array.isArray(menu.ancestors)) {
-  //         for (const ancestorId of menu.ancestors) {
-  //           if (!allMenuIds.has(ancestorId.toString())) {
-  //             const ancestorMenu = await this.menuModel
-  //               .findById(ancestorId)
-  //               .lean();
-  //             if (ancestorMenu) {
-  //               allMenuIds.add(ancestorId.toString());
-  //               allMenus.push(ancestorMenu);
-  //             }
-  //           }
-  //         }
-  //       }
-  //     }
-
-  //     // Now build tree structure from all collected menus
-  //     if (allMenus.length > 0) {
-  //       const map = new Map();
-
-  //       // Store all menus in map
-  //       allMenus.forEach((menu: any) => {
-  //         const cleanMenu = {
-  //           _id: menu._id,
-  //           title: menu.title,
-  //           slug: menu.slug,
-  //           type: menu.type,
-  //           parentId: menu.parentId,
-  //           ancestors: menu.ancestors,
-  //           isActive: menu.isActive,
-  //           order: menu.order,
-  //           children: [],
-  //         };
-  //         map.set(menu._id.toString(), cleanMenu);
-  //       });
-
-  //       // Build tree structure
-  //       allMenus.forEach((menu: any) => {
-  //         const menuNode = map.get(menu._id.toString());
-  //         if (!menu.parentId) {
-  //           menuTree.push(menuNode);
-  //         } else {
-  //           const parent = map.get(menu.parentId.toString());
-  //           if (parent) {
-  //             parent.children.push(menuNode);
-  //           } else {
-  //             menuTree.push(menuNode);
-  //           }
-  //         }
-  //       });
-
-  //       // Sort by order
-  //       const sortByOrder = (items: any[]) => {
-  //         return items.sort((a, b) => (a.order || 0) - (b.order || 0));
-  //       };
-
-  //       let sortedTree = sortByOrder(menuTree);
-
-  //       const sortChildrenRecursively = (items: any[]) => {
-  //         items.forEach((item: any) => {
-  //           if (item.children && item.children.length > 0) {
-  //             item.children = sortByOrder(item.children);
-  //             sortChildrenRecursively(item.children);
-  //           }
-  //         });
-  //       };
-
-  //       sortChildrenRecursively(sortedTree);
-  //       menuTree = sortedTree;
-  //     }
-  //   }
-
-  //   // Remove createdAt and updatedAt from response if you want
-  //   const { createdAt, updatedAt, ...cleanUser } = user;
-
-  //   return {
-  //     _id: cleanUser._id,
-  //     name: cleanUser.name,
-  //     email: cleanUser.email,
-  //     role: {
-  //       _id: role?._id,
-  //       name: role?.name,
-  //       menus: menuTree,
-  //     },
-  //     userStatus: cleanUser.userStatus,
-  //   };
-  // }
-
-  // async findById(id: string): Promise<any> {
-  //   const user = await this.userModel
-  //     .findById(id)
-  //     .populate({
-  //       path: 'role',
-  //       // Remove privelleges populate
-  //     })
-  //     .exec();
-
-  //   if (!user) throw new NotFoundException('User not found');
-
-  //   const role = user.role as any;
-  //   let menuTree: any[] = [];
-
-  //   // Agar role ke paas menuIds hain to unka tree banao
-  //   if (role && role.menuIds && role.menuIds.length > 0) {
-  //     // Populate menuIds se poora menu data lao
-  //     const menus = await this.menuModel
-  //       .find({
-  //         _id: { $in: role.menuIds },
-  //       })
-  //       .lean();
-
-  //     // Clean menu data - remove extra fields
-  //     const map = new Map();
-
-  //     menus.forEach((menu) => {
-  //       // Clean each menu item
-  //       const cleanedMenu = {
-  //         title: menu.title,
-  //         slug: menu.slug,
-  //         type: menu.type,
-  //         order: menu.order,
-  //         children: [],
-  //       };
-  //       map.set(menu._id.toString(), cleanedMenu);
-  //     });
-
-  //     // Tree structure banao
-  //     menus.forEach((menu) => {
-  //       const cleanedMenu = map.get(menu._id.toString());
-  //       if (!menu.parentId) {
-  //         menuTree.push(cleanedMenu);
-  //       } else {
-  //         const parent = map.get(menu.parentId.toString());
-  //         if (parent) {
-  //           parent.children.push(cleanedMenu);
-  //         } else {
-  //           menuTree.push(cleanedMenu);
-  //         }
-  //       }
-  //     });
-
-  //     // Sort the menu tree by order
-  //     const sortByOrder = (items: any[]) => {
-  //       return items.sort((a, b) => (a.order || 0) - (b.order || 0));
-  //     };
-
-  //     const sortedTree = sortByOrder(menuTree);
-
-  //     const sortChildrenRecursively = (items: any[]) => {
-  //       items.forEach((item) => {
-  //         if (item.children && item.children.length > 0) {
-  //           item.children = sortByOrder(item.children);
-  //           sortChildrenRecursively(item.children);
-  //         }
-  //       });
-  //     };
-
-  //     sortChildrenRecursively(sortedTree);
-  //     menuTree = sortedTree;
-  //   }
-
-  //   // Clean user response - remove extra fields
-  //   return {
-  //     _id: user._id,
-  //     name: user.name,
-  //     email: user.email,
-  //     role: {
-  //       _id: role?._id,
-  //       name: role?.name,
-  //       menus: menuTree, // Only menus, no privelleges
-  //     },
-  //     userStatus: user.userStatus,
-  //   };
-  // }
 
   async findById(id: string): Promise<any> {
     const user = await this.userModel
@@ -467,13 +259,16 @@ export class UsersService {
       }
     }
 
-    // Remove createdAt and updatedAt from response if you want
-    const { createdAt, updatedAt, ...cleanUser } = user;
+    // Keep createdAt and updatedAt in response for profile endpoints
+    const userObject = typeof user.toObject === 'function' ? user.toObject() : user;
+    const { createdAt, updatedAt, ...cleanUser } = userObject;
 
     return {
       _id: cleanUser._id,
       name: cleanUser.name,
       email: cleanUser.email,
+      createdAt,
+      updatedAt,
       role: {
         _id: role?._id,
         name: role?.name,
@@ -492,39 +287,6 @@ export class UsersService {
       .select('email role userStatus')
       .exec();
   }
-
-  // async updateUser(
-  //   id: string,
-  //   updates: Partial<Users>,
-  // ): Promise<{ message: string }> {
-  //   // Hash the password if it's being updated
-  //   if (updates.password) {
-  //     updates.password = await bcrypt.hash(updates.password, 10);
-  //   }
-
-  //   // Validate role ID if provided
-  //   if (updates.role) {
-  //     if (!Types.ObjectId.isValid(updates.role.toString())) {
-  //       throw new BadRequestException('Invalid role ID format');
-  //     }
-
-  //     const roleExists = await this.roleModel.exists({ _id: updates.role });
-  //     if (!roleExists) {
-  //       throw new BadRequestException(`Role with ID does not exist`);
-  //     }
-  //   }
-
-  //   // Update the user
-  //   const updated = await this.userModel
-  //     .findByIdAndUpdate(id, updates, { new: true })
-  //     .exec();
-
-  //   if (!updated) {
-  //     throw new NotFoundException('User not found');
-  //   }
-
-  //   return { message: 'User Updated Successfully' };
-  // }
 
   async updateUser(
     id: string,
