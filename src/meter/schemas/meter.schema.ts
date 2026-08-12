@@ -31,6 +31,5 @@ export class Meter extends Document {
 export const MeterSchema = SchemaFactory.createForClass(Meter);
 
 // Indexes for better performance
-MeterSchema.index({ uniqueKey: 1 });
 MeterSchema.index({ area: 1, status: 1 });
 MeterSchema.index({ meterName: 'text' });

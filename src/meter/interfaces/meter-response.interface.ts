@@ -1,21 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+export { ApiResponse } from '../../common/dto/api-response.dto';
 
-export class ApiResponse<T = any> {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
-  @ApiProperty({ example: 'Meter created successfully' })
-  message!: string;
-
-  @ApiPropertyOptional()
-  data?: T;
-
-  @ApiPropertyOptional()
-  error?: string;
-
-  @ApiProperty({ example: '2025-12-22T05:52:55.853Z' })
-  timestamp!: string;
-}
 
 export class MeterResponse {
   @ApiProperty({ example: '6948dcb7cdb8889985c31a19' })
