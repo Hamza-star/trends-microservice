@@ -30,7 +30,6 @@ export async function bootstrap() {
 
     app.set('trust proxy', true);
 
-    
 
     // ============= SWAGGER SETUP =============
   const config = new DocumentBuilder()

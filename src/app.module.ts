@@ -12,6 +12,7 @@ import { UsersModule } from './users/users.module';
 import { LabelsModule } from './labels/labels.module';
 import { AlarmsModule } from './alarms/alarms.module';
 import { AreasModule } from './areas/areas.module';
+import { MeterModule } from './meter/meter.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { AreasModule } from './areas/areas.module';
     LabelsModule,
     AlarmsModule,
     AreasModule,
+    MeterModule,
   ],
   controllers: [AppController],
   providers: [AppService],

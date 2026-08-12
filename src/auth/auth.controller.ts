@@ -114,13 +114,17 @@ export class AuthController {
     };
   }
 
-  private readonly refreshTokenCookieOptions: CookieOptions = {
-    httpOnly: true,
-    secure: false,
-    sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-    path: '/',
-  };
+  private get refreshTokenCookieOptions(): CookieOptions {
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    return {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/',
+    };
+  }
 
   private getSessionMetadata(
     request: Request,

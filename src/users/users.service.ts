@@ -218,6 +218,7 @@ export class UsersService {
             ancestors: menu.ancestors,
             isActive: menu.isActive,
             order: menu.order,
+            icon: menu.icon,
             children: [],
           };
           map.set(menu._id.toString(), cleanMenu);

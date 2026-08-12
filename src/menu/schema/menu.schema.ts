@@ -41,7 +41,7 @@ export class Menu {
     type: String,
     default: null,
   })
-  icon!: string | null;
+  icon?: string | null;
 }
 
 export const MenuSchema = SchemaFactory.createForClass(Menu);
