@@ -36,3 +36,6 @@ export class LoginDto {
   @MaxLength(100, { message: 'Device name must not exceed 100 characters' })
   deviceName?: string;
 }
+
+export * from './forgot-password-backup-code.dto';
+

@@ -14,6 +14,7 @@ import * as bcrypt from 'bcrypt';
 import { PrivellegesDocument } from 'src/privelleges/schema/privelleges.schema';
 import { AuthorizationPolicy } from '../auth/authorization.policy';
 import { PermissionValue } from '../auth/permissions.constants';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 interface RoleAssignmentContext {
   userId?: string;
@@ -365,4 +366,72 @@ export class UsersService {
     if (!result) throw new NotFoundException('User not found');
     return { message: `User Deleted` };
   }
+
+  async updateProfile(
+    userId: string,
+    dto: UpdateProfileDto,
+  ): Promise<{ message: string; user: any }> {
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (dto.newPassword || (dto.email && dto.email.toLowerCase() !== user.email.toLowerCase())) {
+      if (!dto.currentPassword) {
+        throw new BadRequestException('Current password is required to update email or password');
+      }
+
+      const isPasswordValid = await bcrypt.compare(dto.currentPassword, user.password);
+      if (!isPasswordValid) {
+        throw new BadRequestException('Invalid current password');
+      }
+    } else if (dto.currentPassword) {
+      const isPasswordValid = await bcrypt.compare(dto.currentPassword, user.password);
+      if (!isPasswordValid) {
+        throw new BadRequestException('Invalid current password');
+      }
+    }
+
+    if (dto.email && dto.email.toLowerCase() !== user.email.toLowerCase()) {
+      const emailExists = await this.userModel.findOne({
+        email: dto.email.toLowerCase(),
+        _id: { $ne: user._id },
+      });
+      if (emailExists) {
+        throw new BadRequestException('Email already in use');
+      }
+      user.email = dto.email.toLowerCase();
+    }
+
+    if (dto.name !== undefined) {
+      user.name = dto.name;
+    }
+
+    if (dto.newPassword) {
+      const saltRounds = 10;
+      user.password = await bcrypt.hash(dto.newPassword, saltRounds);
+    }
+
+    await user.save();
+
+    const updatedProfile = await this.findById(userId);
+
+    return {
+      message: 'Profile updated successfully',
+      user: updatedProfile,
+    };
+  }
+
+  async saveBackupCodes(userId: string, codes: string[]): Promise<void> {
+    const backupCodes = codes.map((code) => ({
+      code,
+      used: false,
+      usedAt: null,
+    }));
+
+    await this.userModel.findByIdAndUpdate(userId, {
+      $set: { backupCodes },
+    });
+  }
 }
+

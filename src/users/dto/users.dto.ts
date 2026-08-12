@@ -52,3 +52,6 @@ export class UpdateUserDto {
   @IsEnum(['active', 'inactive', 'banned'])
   userStatus?: string;
 }
+
+export * from './update-profile.dto';
+

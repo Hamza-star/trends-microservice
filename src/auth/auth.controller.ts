@@ -9,8 +9,16 @@ import {
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiOkResponse,
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiBody,
+} from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { SignupDto, LoginDto } from './dtos/auth.dtos';
+import { SignupDto, LoginDto, ForgotPasswordBackupCodeDto } from './dtos/auth.dtos';
 import { Throttle } from '@nestjs/throttler';
 import type { CookieOptions, Request, Response } from 'express';
 import { JwtAuthGuard } from './jwt.authguard';
@@ -22,10 +30,11 @@ interface AuthenticatedRequest extends Request {
   };
 }
 
+@ApiTags('Auth')
 @Controller('auth')
 @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) { }
 
   @Throttle({
     default: {
@@ -33,9 +42,27 @@ export class AuthController {
       ttl: 60000,
     },
   })
+  @ApiOperation({ summary: 'Register a new user (returns 10 backup codes)' })
+  @ApiOkResponse({ description: 'User registered successfully with backup codes' })
+  @ApiBadRequestResponse({ description: 'User already exists or invalid password' })
   @Post('signup')
   async signup(@Body() dto: SignupDto) {
     return this.authService.signup(dto.email, dto.password);
+  }
+
+  @Throttle({
+    default: {
+      limit: 5,
+      ttl: 60000,
+    },
+  })
+  @ApiOperation({ summary: 'Reset password using a valid unused backup code' })
+  @ApiOkResponse({ description: 'Password reset successfully' })
+  @ApiBadRequestResponse({ description: 'Invalid email or backup code' })
+  @ApiBody({ type: ForgotPasswordBackupCodeDto })
+  @Post('forgot-password')
+  async forgotPasswordWithBackupCode(@Body() dto: ForgotPasswordBackupCodeDto) {
+    return this.authService.forgotPasswordWithBackupCode(dto);
   }
 
   @Throttle({

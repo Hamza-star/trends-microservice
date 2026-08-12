@@ -28,6 +28,18 @@ export class Users {
   @Prop({ required: true })
   password!: string;
 
+  @Prop({
+    type: [
+      {
+        code: { type: String, required: true },
+        used: { type: Boolean, default: false },
+        usedAt: { type: Date, default: null },
+      },
+    ],
+    default: [],
+  })
+  backupCodes?: Array<{ code: string; used: boolean; usedAt?: Date | null }>;
+
   @Prop({ default: Date.now })
   createdAt!: Date;
 

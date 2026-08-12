@@ -7,12 +7,14 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { UsersService } from '../users/users.service';
 import {
   RefreshTokenService,
   RefreshTokenSessionMetadata,
 } from './refresh-token.service';
 import { AuthTokenService } from './auth-token.service';
+import { ForgotPasswordBackupCodeDto } from './dtos/forgot-password-backup-code.dto';
 
 @Injectable()
 export class AuthService {
@@ -41,9 +43,16 @@ export class AuthService {
       throw new BadRequestException('Error hashing password');
     }
     const roleId = await this.usersService.resolveDefaultRoleId();
-    await this.usersService.registerUser(email, hashedPassword, roleId);
+    const newUser = await this.usersService.registerUser(email, hashedPassword, roleId);
 
-    return { message: 'Signup Successfull' };
+    const backupCodes = this.generateBackupCodes();
+    const userId = this.getUserId(newUser);
+    await this.usersService.saveBackupCodes(userId, backupCodes);
+
+    return {
+      message: 'Signup Successfull',
+      backupCodes,
+    };
   }
 
   async login(
@@ -175,6 +184,57 @@ export class AuthService {
     return this.refreshTokenService.revokeAllUserSessions(userId);
   }
 
+  async forgotPasswordWithBackupCode(
+    dto: ForgotPasswordBackupCodeDto,
+  ): Promise<{ message: string }> {
+    const user = await this.usersService.findByEmail(dto.email);
+    if (!user) {
+      throw new BadRequestException('Invalid email or backup code');
+    }
+
+    const backupCodes = (user.backupCodes ?? []) as Array<{
+      code: string;
+      used: boolean;
+      usedAt?: Date | null;
+    }>;
+
+    const targetCodeIndex = backupCodes.findIndex(
+      (bc) => bc.code === dto.backupCode && !bc.used,
+    );
+
+    if (targetCodeIndex === -1) {
+      throw new BadRequestException('Invalid or already used backup code');
+    }
+
+    const saltRounds = Number(this.configService.get('BCRYPT_SALT_ROUNDS') ?? 10);
+    const hashedPassword = await bcrypt.hash(dto.newPassword, saltRounds);
+
+    backupCodes[targetCodeIndex].used = true;
+    backupCodes[targetCodeIndex].usedAt = new Date();
+
+    user.password = hashedPassword;
+    user.backupCodes = backupCodes;
+
+    await (user as any).save();
+
+    const userId = this.getUserId(user);
+    await this.refreshTokenService.revokeAllUserSessions(userId);
+
+    return { message: 'Password reset successfully' };
+  }
+
+  private generateBackupCodes(count = 10, length = 8): string[] {
+    const codes: string[] = [];
+    for (let i = 0; i < count; i++) {
+      let code = '';
+      for (let j = 0; j < length; j++) {
+        code += crypto.randomInt(0, 10).toString();
+      }
+      codes.push(code);
+    }
+    return codes;
+  }
+
   private async persistRefreshTokenSession(
     userId: string,
     refreshToken: string,
@@ -202,3 +262,4 @@ export class AuthService {
     return String(userId);
   }
 }
+
