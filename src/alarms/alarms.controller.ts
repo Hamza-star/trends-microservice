@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { AlarmsService } from './alarms.service';
 import { ConfigAlarmDto } from './dto/alarmsConfig.dto';
@@ -9,9 +9,10 @@ import { AcknowledgeDto } from './dto/acknowledge.dto';
 import { AcknowledgeManyDto } from './dto/acknowledge-many.dto';
 import { SnoozeDto } from './dto/snooze.dto';
 import { TriggeredAlarmResponse } from './types/alarm-types';
+import { JwtAuthGuard } from 'src/auth/jwt.authguard';
 @Controller('alarms')
 export class AlarmsController {
-  constructor(private readonly alarmsService: AlarmsService) {}
+  constructor(private readonly alarmsService: AlarmsService) { }
 
   @Get('intervals')
   getIntervals() {
@@ -121,5 +122,11 @@ export class AlarmsController {
   @Patch('occurrences/snooze')
   async snoozeAlarm(@Body() snoozeDto: SnoozeDto) {
     return this.alarmsService.snoozeAlarm(snoozeDto);
+  }
+
+  // @UseGuards(JwtAuthGuard)
+  @Get('param-options')
+  async getParamOptions(@Query('category') category?: string) {
+    return this.alarmsService.getParamOptions(category);
   }
 }

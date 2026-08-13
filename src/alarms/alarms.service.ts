@@ -4,12 +4,13 @@
 import { HttpService } from '@nestjs/axios';
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { InjectConnection, InjectModel } from '@nestjs/mongoose';
+import { Connection, Model, Types } from 'mongoose';
 import { firstValueFrom } from 'rxjs';
 import { ConfigAlarmDto } from './dto/alarmsConfig.dto';
 import { AlarmsTypeDto } from './dto/alarmsType.dto';
@@ -48,8 +49,9 @@ export class AlarmsService {
     @InjectModel(AlarmOccurrence.name)
     private alarmOccurrenceModel: Model<AlarmsOccurrenceDocument>,
     private readonly httpService: HttpService,
-    @InjectModel('Users') private userModel: Model<any>, 
-  ) {}
+    @InjectModel('Users') private userModel: Model<any>,
+    @InjectConnection() private readonly connection: Connection,
+  ) { }
 
   private readonly intervalsSec = [5, 15, 30, 60, 120];
   private readonly Time = [1, 2, 3, 4, 5];
@@ -607,52 +609,52 @@ export class AlarmsService {
     const now = new Date();
 
     const activeEvents = await this.alarmsEventModel
-    .find({})
-    .populate({
-      path: 'alarmOccurrences',
-      model: AlarmOccurrence.name,
-      match: { alarmStatus: true },
-    })
-    .exec();
+      .find({})
+      .populate({
+        path: 'alarmOccurrences',
+        model: AlarmOccurrence.name,
+        match: { alarmStatus: true },
+      })
+      .exec();
 
-  for (const ev of activeEvents) {
-    const cfgId = ev.alarmConfigId?.toString?.() ?? '';
+    for (const ev of activeEvents) {
+      const cfgId = ev.alarmConfigId?.toString?.() ?? '';
 
-    if (!activeConfigIds.has(cfgId)) {
-      ev.alarmLastOccurrence = now;
+      if (!activeConfigIds.has(cfgId)) {
+        ev.alarmLastOccurrence = now;
 
-      if (ev.alarmFirstOccurrence) {
-        const triggerTime = new Date(ev.alarmFirstOccurrence).getTime();
-        const currentTime = now.getTime();
-        const durationSec = Math.floor((currentTime - triggerTime) / 1000);
+        if (ev.alarmFirstOccurrence) {
+          const triggerTime = new Date(ev.alarmFirstOccurrence).getTime();
+          const currentTime = now.getTime();
+          const durationSec = Math.floor((currentTime - triggerTime) / 1000);
 
-        if (ev.alarmOccurrences?.length) {
-          const lastOccurrence = ev.alarmOccurrences[ev.alarmOccurrences.length - 1];
-          const lastOccurrenceId = lastOccurrence._id ?? lastOccurrence;
+          if (ev.alarmOccurrences?.length) {
+            const lastOccurrence = ev.alarmOccurrences[ev.alarmOccurrences.length - 1];
+            const lastOccurrenceId = lastOccurrence._id ?? lastOccurrence;
 
-          try {
-            await this.alarmOccurrenceModel.findByIdAndUpdate(
-              lastOccurrenceId,
-              {
-                alarmStatus: false,
-                alarmDuration: durationSec,
-                resolveTime: now, // - Set resolve time
-              },
-            );
-          } catch (err: any) {
-            this.logger.error(
-              'Failed to update occurrence duration',
-              err?.message ?? err,
-              err,
-            );
+            try {
+              await this.alarmOccurrenceModel.findByIdAndUpdate(
+                lastOccurrenceId,
+                {
+                  alarmStatus: false,
+                  alarmDuration: durationSec,
+                  resolveTime: now, // - Set resolve time
+                },
+              );
+            } catch (err: any) {
+              this.logger.error(
+                'Failed to update occurrence duration',
+                err?.message ?? err,
+                err,
+              );
+            }
           }
         }
-      }
 
-      await ev.save();
+        await ev.save();
+      }
     }
   }
-}
 
   /**
    * Process all active alarms by fetching data from configured endpoints
@@ -1168,135 +1170,122 @@ export class AlarmsService {
 
     return false;
   }
-  
-async gethistoricalAlarms(filters: any = {}) {
-  try {
-    // Build base query for occurrences
-    const occurrenceMatch: any = {};
 
-    if (filters.alarmAcknowledgeStatus) {
-      occurrenceMatch.alarmAcknowledgeStatus = filters.alarmAcknowledgeStatus;
-    }
+  async gethistoricalAlarms(filters: any = {}) {
+    try {
+      // Build base query for occurrences
+      const occurrenceMatch: any = {};
 
-    if (filters.alarmStatus !== undefined) {
-      occurrenceMatch.alarmStatus = filters.alarmStatus;
-    }
-
-    if (filters.range || filters.from || filters.to || filters.date) {
-      const { start, end } = getTimeRange(filters as TimeRangePayload);
-      occurrenceMatch.date = { $gte: new Date(start), $lte: new Date(end) };
-    }
-
-    // Step 1: Get filtered occurrences with basic population
-    const occurrences = await this.alarmOccurrenceModel
-      .find(occurrenceMatch)
-      .populate({
-        path: 'alarmAcknowledgedBy',
-        select: '-password',
-        model: 'Users',
-      })
-      .populate('alarmTypeId')
-      .sort({ date: -1 })
-      .lean();
-
-    if (occurrences.length === 0) {
-      return { data: [], total: 0 };
-    }
-
-    // - FIX: Calculate correct duration using resolveTime
-    const now = new Date();
-    const occurrencesWithCorrectDuration = occurrences.map((occ) => {
-      const triggerTime = new Date(occ.date).getTime();
-      const currentTime = now.getTime();
-      
-      let calculatedDuration = occ.alarmDuration || 0;
-      
-      if (occ.alarmStatus === true) {
-        // Active alarm - real-time duration
-        calculatedDuration = Math.floor((currentTime - triggerTime) / 1000);
-      } else {
-        // - Resolved alarm - use resolveTime if available
-        let resolvedTime = currentTime;
-        
-        if (occ.resolveTime) {
-          // - Use resolveTime (set once when alarm resolved)
-          resolvedTime = new Date(occ.resolveTime).getTime();
-        } else if (occ.updatedAt) {
-          // Fallback to updatedAt
-          resolvedTime = new Date(occ.updatedAt).getTime();
-        }
-        
-        const actualDuration = Math.floor((resolvedTime - triggerTime) / 1000);
-        calculatedDuration = actualDuration;
+      if (filters.alarmAcknowledgeStatus) {
+        occurrenceMatch.alarmAcknowledgeStatus = filters.alarmAcknowledgeStatus;
       }
-      
-      return {
-        ...occ,
-        alarmDuration: calculatedDuration,
-      };
-    });
 
-    // Step 2: Get unique alarm config IDs from occurrences
-    const configIds = [
-      ...new Set(
-        occurrencesWithCorrectDuration
-          .map((occ) => occ.alarmConfigId?.toString())
-          .filter(Boolean),
-      ),
-    ].map((id) => new Types.ObjectId(id));
-
-    // Step 3: Get alarm configurations with all needed population
-    const alarmConfigs = await this.alarmsModel
-      .find({ _id: { $in: configIds } })
-      .populate('alarmTypeId')
-      .populate('alarmTriggerConfig')
-      .lean();
-
-    // Create a map for quick lookup
-    const configMap = new Map();
-    alarmConfigs.forEach((config) => {
-      configMap.set(config._id.toString(), config);
-    });
-
-    // Step 4: Group occurrences by alarm config
-    const occurrencesByConfig = new Map();
-    occurrencesWithCorrectDuration.forEach((occurrence) => {
-      const configId = occurrence.alarmConfigId?.toString();
-      if (configId && configMap.has(configId)) {
-        if (!occurrencesByConfig.has(configId)) {
-          occurrencesByConfig.set(configId, []);
-        }
-        occurrencesByConfig.get(configId).push(occurrence);
+      if (filters.alarmStatus !== undefined) {
+        occurrenceMatch.alarmStatus = filters.alarmStatus;
       }
-    });
 
-    // Step 5: Build final response
-    const result = Array.from(occurrencesByConfig.entries()).map(
-      ([configId, occs]) => {
-        const config = configMap.get(configId);
+      if (filters.range || filters.from || filters.to || filters.date) {
+        const { start, end } = getTimeRange(filters as TimeRangePayload);
+        occurrenceMatch.date = { $gte: new Date(start), $lte: new Date(end) };
+      }
+
+      // Step 1: Get filtered occurrences with basic population
+      const occurrences = await this.alarmOccurrenceModel
+        .find(occurrenceMatch)
+        .populate({
+          path: 'alarmAcknowledgedBy',
+          select: '-password',
+          model: 'Users',
+        })
+        .populate('alarmTypeId')
+        .sort({ date: -1 })
+        .lean();
+
+      if (occurrences.length === 0) {
+        return { data: [], total: 0 };
+      }
+
+      // - FIX: Calculate correct duration using resolveTime
+      const now = new Date();
+      const occurrencesWithCorrectDuration = occurrences.map((occ) => {
+        const triggerTime = new Date(occ.date).getTime();
+        const currentTime = now.getTime();
+
+        let calculatedDuration = occ.alarmDuration || 0;
+
+        if (occ.alarmStatus === true) {
+          // Active alarm - real-time duration
+          calculatedDuration = Math.floor((currentTime - triggerTime) / 1000);
+        } else {
+          // - Resolved alarm - use resolveTime if available
+          let resolvedTime = currentTime;
+
+          if (occ.resolveTime) {
+            // - Use resolveTime (set once when alarm resolved)
+            resolvedTime = new Date(occ.resolveTime).getTime();
+          } else if (occ.updatedAt) {
+            // Fallback to updatedAt
+            resolvedTime = new Date(occ.updatedAt).getTime();
+          }
+
+          const actualDuration = Math.floor((resolvedTime - triggerTime) / 1000);
+          calculatedDuration = actualDuration;
+        }
 
         return {
-          alarmConfigId: config,
-          alarmOccurrenceCount: occs.length,
-          alarmOccurrences: occs,
-          alarmFirstOccurrence:
-            occs.length > 0 ? occs[occs.length - 1].date : null,
-          alarmLastOccurrence: occs.length > 0 ? occs[0].date : null,
-          logicStatusSummary: config?.Logics?.map((logic) => {
-            const triggeredOcc = occs.find((occ) =>
-              occ.logicStatuses?.some(
-                (ls) =>
-                  ls.alarmLocation === logic.alarmLocation &&
-                  ls.alarmSubLocation === logic.alarmSubLocation &&
-                  ls.alarmDevice === logic.alarmDevice &&
-                  ls.alarmParameter === logic.alarmParameter &&
-                  ls.isTriggered,
-              ),
-            );
-            return {
-              ...logic,
-              lastTriggered: triggeredOcc?.date,
-              triggeredCount: occs.filter((occ) =>
+          ...occ,
+          alarmDuration: calculatedDuration,
+        };
+      });
+
+      // Step 2: Get unique alarm config IDs from occurrences
+      const configIds = [
+        ...new Set(
+          occurrencesWithCorrectDuration
+            .map((occ) => occ.alarmConfigId?.toString())
+            .filter(Boolean),
+        ),
+      ].map((id) => new Types.ObjectId(id));
+
+      // Step 3: Get alarm configurations with all needed population
+      const alarmConfigs = await this.alarmsModel
+        .find({ _id: { $in: configIds } })
+        .populate('alarmTypeId')
+        .populate('alarmTriggerConfig')
+        .lean();
+
+      // Create a map for quick lookup
+      const configMap = new Map();
+      alarmConfigs.forEach((config) => {
+        configMap.set(config._id.toString(), config);
+      });
+
+      // Step 4: Group occurrences by alarm config
+      const occurrencesByConfig = new Map();
+      occurrencesWithCorrectDuration.forEach((occurrence) => {
+        const configId = occurrence.alarmConfigId?.toString();
+        if (configId && configMap.has(configId)) {
+          if (!occurrencesByConfig.has(configId)) {
+            occurrencesByConfig.set(configId, []);
+          }
+          occurrencesByConfig.get(configId).push(occurrence);
+        }
+      });
+
+      // Step 5: Build final response
+      const result = Array.from(occurrencesByConfig.entries()).map(
+        ([configId, occs]) => {
+          const config = configMap.get(configId);
+
+          return {
+            alarmConfigId: config,
+            alarmOccurrenceCount: occs.length,
+            alarmOccurrences: occs,
+            alarmFirstOccurrence:
+              occs.length > 0 ? occs[occs.length - 1].date : null,
+            alarmLastOccurrence: occs.length > 0 ? occs[0].date : null,
+            logicStatusSummary: config?.Logics?.map((logic) => {
+              const triggeredOcc = occs.find((occ) =>
                 occ.logicStatuses?.some(
                   (ls) =>
                     ls.alarmLocation === logic.alarmLocation &&
@@ -1305,34 +1294,47 @@ async gethistoricalAlarms(filters: any = {}) {
                     ls.alarmParameter === logic.alarmParameter &&
                     ls.isTriggered,
                 ),
-              ).length,
-            };
-          }),
-        };
-      },
-    );
+              );
+              return {
+                ...logic,
+                lastTriggered: triggeredOcc?.date,
+                triggeredCount: occs.filter((occ) =>
+                  occ.logicStatuses?.some(
+                    (ls) =>
+                      ls.alarmLocation === logic.alarmLocation &&
+                      ls.alarmSubLocation === logic.alarmSubLocation &&
+                      ls.alarmDevice === logic.alarmDevice &&
+                      ls.alarmParameter === logic.alarmParameter &&
+                      ls.isTriggered,
+                  ),
+                ).length,
+              };
+            }),
+          };
+        },
+      );
 
-    // Sort by most recent occurrence
-    result.sort(
-      (a, b) =>
-        new Date(b.alarmLastOccurrence || 0).getTime() -
-        new Date(a.alarmLastOccurrence || 0).getTime(),
-    );
+      // Sort by most recent occurrence
+      result.sort(
+        (a, b) =>
+          new Date(b.alarmLastOccurrence || 0).getTime() -
+          new Date(a.alarmLastOccurrence || 0).getTime(),
+      );
 
-    return {
-      data: result,
-      total: result.length,
-    };
-  } catch (error) {
-    this.logger.error('Error fetching historical alarms', error);
-    throw error;
+      return {
+        data: result,
+        total: result.length,
+      };
+    } catch (error) {
+      this.logger.error('Error fetching historical alarms', error);
+      throw error;
+    }
   }
-}
 
 
-private calculateDuration(triggerDate: Date): number {
-  return Math.floor((Date.now() - new Date(triggerDate).getTime()) / 1000);
-}
+  private calculateDuration(triggerDate: Date): number {
+    return Math.floor((Date.now() - new Date(triggerDate).getTime()) / 1000);
+  }
 
   /**
    * Get all unique acknowledgement actions
@@ -1357,105 +1359,105 @@ private calculateDuration(triggerDate: Date): number {
 
 
 
-async acknowledgeOne(
-  occurrenceId: string,
-  action: string,
-  acknowledgedBy: string,
-) {
-  // 1. Validate IDs
-  if (!Types.ObjectId.isValid(occurrenceId)) {
-    throw new BadRequestException('Invalid occurrence ID');
-  }
-  
-  if (!Types.ObjectId.isValid(acknowledgedBy)) {
-    throw new BadRequestException('Invalid acknowledgedBy ID');
-  }
+  async acknowledgeOne(
+    occurrenceId: string,
+    action: string,
+    acknowledgedBy: string,
+  ) {
+    // 1. Validate IDs
+    if (!Types.ObjectId.isValid(occurrenceId)) {
+      throw new BadRequestException('Invalid occurrence ID');
+    }
 
-  // 2. Find occurrence
-  const occurrence = await this.alarmOccurrenceModel.findById(occurrenceId);
-  if (!occurrence) {
-    throw new NotFoundException('Occurrence not found');
-  }
+    if (!Types.ObjectId.isValid(acknowledgedBy)) {
+      throw new BadRequestException('Invalid acknowledgedBy ID');
+    }
 
-  if (occurrence.alarmAcknowledgeStatus === 'Acknowledged') {
-    throw new BadRequestException('This occurrence is already acknowledged');
-  }
+    // 2. Find occurrence
+    const occurrence = await this.alarmOccurrenceModel.findById(occurrenceId);
+    if (!occurrence) {
+      throw new NotFoundException('Occurrence not found');
+    }
 
-  // 3. Update occurrence
-  const now = new Date();
-  const delay = (now.getTime() - new Date(occurrence.date).getTime()) / 1000;
-  const durationInSeconds = this.calculateDuration(occurrence.date);
+    if (occurrence.alarmAcknowledgeStatus === 'Acknowledged') {
+      throw new BadRequestException('This occurrence is already acknowledged');
+    }
 
-  occurrence.alarmAcknowledgeStatus = 'Acknowledged';
-  occurrence.alarmAcknowledgmentAction = action;
-  occurrence.alarmAcknowledgedBy = new Types.ObjectId(acknowledgedBy);
-  occurrence.alarmAcknowledgedDelay = delay;
-  occurrence.alarmDuration = durationInSeconds;
-  await occurrence.save();
+    // 3. Update occurrence
+    const now = new Date();
+    const delay = (now.getTime() - new Date(occurrence.date).getTime()) / 1000;
+    const durationInSeconds = this.calculateDuration(occurrence.date);
 
-  // 4. Update parent alarm
-  const parentAlarm = await this.alarmsEventModel.findOne({
-    alarmOccurrences: occurrence._id,
-  });
+    occurrence.alarmAcknowledgeStatus = 'Acknowledged';
+    occurrence.alarmAcknowledgmentAction = action;
+    occurrence.alarmAcknowledgedBy = new Types.ObjectId(acknowledgedBy);
+    occurrence.alarmAcknowledgedDelay = delay;
+    occurrence.alarmDuration = durationInSeconds;
+    await occurrence.save();
 
-  if (parentAlarm) {
-    const acknowledgedCount = await this.alarmOccurrenceModel.countDocuments({
-      _id: { $in: parentAlarm.alarmOccurrences },
-      alarmAcknowledgeStatus: 'Acknowledged',
+    // 4. Update parent alarm
+    const parentAlarm = await this.alarmsEventModel.findOne({
+      alarmOccurrences: occurrence._id,
     });
 
-    parentAlarm.alarmAcknowledgementStatusCount = acknowledgedCount;
-    await parentAlarm.save();
-  }
+    if (parentAlarm) {
+      const acknowledgedCount = await this.alarmOccurrenceModel.countDocuments({
+        _id: { $in: parentAlarm.alarmOccurrences },
+        alarmAcknowledgeStatus: 'Acknowledged',
+      });
 
-  // 5. Fetch user details
-  const user = await this.userModel
-    .findById(acknowledgedBy)
-    .select('name email')
-    .lean();
+      parentAlarm.alarmAcknowledgementStatusCount = acknowledgedCount;
+      await parentAlarm.save();
+    }
 
-  // 6. Build occurrence response
-  const occurrenceObj = occurrence.toObject();
-  occurrenceObj.alarmAcknowledgedBy = user || null;
+    // 5. Fetch user details
+    const user = await this.userModel
+      .findById(acknowledgedBy)
+      .select('name email')
+      .lean();
 
-  // 7. Build parent alarm response
-  let populatedParentAlarm: any = null;
+    // 6. Build occurrence response
+    const occurrenceObj = occurrence.toObject();
+    occurrenceObj.alarmAcknowledgedBy = user || null;
 
-  if (parentAlarm) {
-    const parentAlarmObj = parentAlarm.toObject();
-    
-    const populatedOccurrences = await Promise.all(
-      (parentAlarmObj.alarmOccurrences || []).map(async (occId: any) => {
-        const occ = await this.alarmOccurrenceModel
-          .findById(occId)
-          .lean();
-        
-        let userDetail = null;
-        if (occ?.alarmAcknowledgedBy) {
-          userDetail = await this.userModel
-            .findById(occ.alarmAcknowledgedBy)
-            .select('name email')
+    // 7. Build parent alarm response
+    let populatedParentAlarm: any = null;
+
+    if (parentAlarm) {
+      const parentAlarmObj = parentAlarm.toObject();
+
+      const populatedOccurrences = await Promise.all(
+        (parentAlarmObj.alarmOccurrences || []).map(async (occId: any) => {
+          const occ = await this.alarmOccurrenceModel
+            .findById(occId)
             .lean();
-        }
-        
-        return {
-          ...occ,
-          alarmAcknowledgedBy: userDetail
-        };
-      })
-    );
 
-    populatedParentAlarm = {
-      ...parentAlarmObj,
-      alarmOccurrences: populatedOccurrences
+          let userDetail = null;
+          if (occ?.alarmAcknowledgedBy) {
+            userDetail = await this.userModel
+              .findById(occ.alarmAcknowledgedBy)
+              .select('name email')
+              .lean();
+          }
+
+          return {
+            ...occ,
+            alarmAcknowledgedBy: userDetail
+          };
+        })
+      );
+
+      populatedParentAlarm = {
+        ...parentAlarmObj,
+        alarmOccurrences: populatedOccurrences
+      };
+    }
+
+    return {
+      updatedOccurrences: [occurrenceObj],
+      parentAlarms: populatedParentAlarm ? [populatedParentAlarm] : [],
     };
   }
-
-  return {
-    updatedOccurrences: [occurrenceObj],
-    parentAlarms: populatedParentAlarm ? [populatedParentAlarm] : [],
-  };
-}
   /**
    * Acknowledge multiple occurrences at once
    * @param occurrenceIds Array of occurrence IDs to acknowledge
@@ -1463,178 +1465,210 @@ async acknowledgeOne(
    * @returns Updated occurrences and parent alarms
    */
 
-async acknowledgeMany(occurrenceIds: string[], acknowledgedBy: string) {
-  // 1. Validate
-  if (!Types.ObjectId.isValid(acknowledgedBy)) {
-    throw new BadRequestException('Invalid acknowledgedBy ID format');
-  }
-
-  const acknowledgedByObjectId = new Types.ObjectId(acknowledgedBy);
-  const now = new Date();
-  
-  const objectIds = occurrenceIds.map((id) => {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException(`Invalid occurrence ID: ${id}`);
+  async acknowledgeMany(occurrenceIds: string[], acknowledgedBy: string) {
+    // 1. Validate
+    if (!Types.ObjectId.isValid(acknowledgedBy)) {
+      throw new BadRequestException('Invalid acknowledgedBy ID format');
     }
-    return new Types.ObjectId(id);
-  });
 
-  // Get occurrences first to calculate duration
-  const occurrencesToUpdate = await this.alarmOccurrenceModel.find({
-    _id: { $in: objectIds },
-    alarmAcknowledgeStatus: { $ne: 'Acknowledged' },
-  });
+    const acknowledgedByObjectId = new Types.ObjectId(acknowledgedBy);
+    const now = new Date();
 
-  // Update each occurrence with correct duration
-  for (const occurrence of occurrencesToUpdate) {
-    const triggerTime = new Date(occurrence.date).getTime();
-    const currentTime = now.getTime();
-    const durationInSeconds = Math.floor((currentTime - triggerTime) / 1000);
-    const delay = (currentTime - triggerTime) / 1000;
-
-    await this.alarmOccurrenceModel.updateOne(
-      { _id: occurrence._id },
-      {
-        $set: {
-          alarmAcknowledgeStatus: 'Acknowledged',
-          alarmAcknowledgmentAction: 'Auto Mass Acknowledged',
-          alarmAcknowledgedBy: acknowledgedByObjectId,
-          alarmAcknowledgedDelay: delay,
-          alarmDuration: durationInSeconds,
-        },
-      },
-    );
-  }
-
-  // Get user details once
-  const user = await this.userModel
-    .findById(acknowledgedBy)
-    .select('name email')
-    .lean();
-
-  // Get all occurrences with aggregation
-  const occurrences = await this.alarmOccurrenceModel.aggregate([
-    { $match: { _id: { $in: objectIds } } },
-    {
-      $lookup: {
-        from: 'users',
-        localField: 'alarmAcknowledgedBy',
-        foreignField: '_id',
-        as: 'acknowledgedByUser'
+    const objectIds = occurrenceIds.map((id) => {
+      if (!Types.ObjectId.isValid(id)) {
+        throw new BadRequestException(`Invalid occurrence ID: ${id}`);
       }
-    },
-    {
-      $unwind: {
-        path: '$acknowledgedByUser',
-        preserveNullAndEmptyArrays: true
-      }
-    },
-    {
-      $project: {
-        'alarmAcknowledgedBy': {
-          _id: '$acknowledgedByUser._id',
-          name: '$acknowledgedByUser.name',
-          email: '$acknowledgedByUser.email'
-        },
-        date: 1,
-        alarmID: 1,
-        alarmStatus: 1,
-        alarmConfigId: 1,
-        logicStatuses: 1,
-        alarmAcknowledgeStatus: 1,
-        alarmAcknowledgmentAction: 1,
-        alarmAcknowledgedDelay: 1,
-        alarmAge: 1,
-        alarmDuration: 1,
-        alarmSnooze: 1,
-        createdAt: 1,
-        updatedAt: 1,
-        resolveTime: 1, // Include resolveTime in response
-      }
-    }
-  ]);
-
-  // Update parent alarms
-  const parentAlarms = await this.alarmsEventModel.find({
-    alarmOccurrences: { $in: objectIds },
-  });
-
-  for (const parentAlarm of parentAlarms) {
-    const acknowledgedCount = await this.alarmOccurrenceModel.countDocuments({
-      _id: { $in: parentAlarm.alarmOccurrences },
-      alarmAcknowledgeStatus: 'Acknowledged',
+      return new Types.ObjectId(id);
     });
 
-    parentAlarm.alarmAcknowledgementStatusCount = acknowledgedCount;
-    await parentAlarm.save();
-  }
+    // Get occurrences first to calculate duration
+    const occurrencesToUpdate = await this.alarmOccurrenceModel.find({
+      _id: { $in: objectIds },
+      alarmAcknowledgeStatus: { $ne: 'Acknowledged' },
+    });
 
-  // Get parent alarms with populated occurrences
-  const populatedParentAlarms = await this.alarmsEventModel
-    .find({ alarmOccurrences: { $in: objectIds } })
-    .populate({
-      path: 'alarmOccurrences',
-      populate: {
-        path: 'alarmAcknowledgedBy',
-        select: 'name email'
+    // Update each occurrence with correct duration
+    for (const occurrence of occurrencesToUpdate) {
+      const triggerTime = new Date(occurrence.date).getTime();
+      const currentTime = now.getTime();
+      const durationInSeconds = Math.floor((currentTime - triggerTime) / 1000);
+      const delay = (currentTime - triggerTime) / 1000;
+
+      await this.alarmOccurrenceModel.updateOne(
+        { _id: occurrence._id },
+        {
+          $set: {
+            alarmAcknowledgeStatus: 'Acknowledged',
+            alarmAcknowledgmentAction: 'Auto Mass Acknowledged',
+            alarmAcknowledgedBy: acknowledgedByObjectId,
+            alarmAcknowledgedDelay: delay,
+            alarmDuration: durationInSeconds,
+          },
+        },
+      );
+    }
+
+    // Get user details once
+    const user = await this.userModel
+      .findById(acknowledgedBy)
+      .select('name email')
+      .lean();
+
+    // Get all occurrences with aggregation
+    const occurrences = await this.alarmOccurrenceModel.aggregate([
+      { $match: { _id: { $in: objectIds } } },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'alarmAcknowledgedBy',
+          foreignField: '_id',
+          as: 'acknowledgedByUser'
+        }
+      },
+      {
+        $unwind: {
+          path: '$acknowledgedByUser',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          'alarmAcknowledgedBy': {
+            _id: '$acknowledgedByUser._id',
+            name: '$acknowledgedByUser.name',
+            email: '$acknowledgedByUser.email'
+          },
+          date: 1,
+          alarmID: 1,
+          alarmStatus: 1,
+          alarmConfigId: 1,
+          logicStatuses: 1,
+          alarmAcknowledgeStatus: 1,
+          alarmAcknowledgmentAction: 1,
+          alarmAcknowledgedDelay: 1,
+          alarmAge: 1,
+          alarmDuration: 1,
+          alarmSnooze: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          resolveTime: 1, // Include resolveTime in response
+        }
       }
-    })
-    .lean();
+    ]);
 
-  return {
-    updatedOccurrences: occurrences,
-    parentAlarms: populatedParentAlarms,
-  };
-}
+    // Update parent alarms
+    const parentAlarms = await this.alarmsEventModel.find({
+      alarmOccurrences: { $in: objectIds },
+    });
+
+    for (const parentAlarm of parentAlarms) {
+      const acknowledgedCount = await this.alarmOccurrenceModel.countDocuments({
+        _id: { $in: parentAlarm.alarmOccurrences },
+        alarmAcknowledgeStatus: 'Acknowledged',
+      });
+
+      parentAlarm.alarmAcknowledgementStatusCount = acknowledgedCount;
+      await parentAlarm.save();
+    }
+
+    // Get parent alarms with populated occurrences
+    const populatedParentAlarms = await this.alarmsEventModel
+      .find({ alarmOccurrences: { $in: objectIds } })
+      .populate({
+        path: 'alarmOccurrences',
+        populate: {
+          path: 'alarmAcknowledgedBy',
+          select: 'name email'
+        }
+      })
+      .lean();
+
+    return {
+      updatedOccurrences: occurrences,
+      parentAlarms: populatedParentAlarms,
+    };
+  }
 
   /**
    * Snooze alarm occurrences
    * @param snoozeDto Snooze data transfer object
    * @returns Success message
    */
-async snoozeAlarm(dto: SnoozeDto) {
-  const { ids, alarmSnooze, snoozeDuration, snoozeAt } = dto;
+  async snoozeAlarm(dto: SnoozeDto) {
+    const { ids, alarmSnooze, snoozeDuration, snoozeAt } = dto;
 
-  // Validate IDs
-  for (const id of ids) {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException(`Invalid occurrence ID: ${id}`);
+    // Validate IDs
+    for (const id of ids) {
+      if (!Types.ObjectId.isValid(id)) {
+        throw new BadRequestException(`Invalid occurrence ID: ${id}`);
+      }
     }
-  }
 
-  const objectIds = ids.map((id) => new Types.ObjectId(id));
-  const snoozeTimestamp = new Date(snoozeAt);
+    const objectIds = ids.map((id) => new Types.ObjectId(id));
+    const snoozeTimestamp = new Date(snoozeAt);
 
-  if (Number.isNaN(snoozeTimestamp.getTime())) {
-    throw new BadRequestException('Invalid snoozeAt date');
-  }
+    if (Number.isNaN(snoozeTimestamp.getTime())) {
+      throw new BadRequestException('Invalid snoozeAt date');
+    }
 
-  const occurrences = await this.alarmOccurrenceModel.find({
-    _id: { $in: objectIds },
-  });
+    const occurrences = await this.alarmOccurrenceModel.find({
+      _id: { $in: objectIds },
+    });
 
-  if (!occurrences.length) {
-    throw new NotFoundException('No alarms found');
-  }
+    if (!occurrences.length) {
+      throw new NotFoundException('No alarms found');
+    }
 
-  for (const occurrence of occurrences) {
-    const durationInSeconds = this.calculateDuration(occurrence.date);
+    for (const occurrence of occurrences) {
+      const durationInSeconds = this.calculateDuration(occurrence.date);
 
-    await this.alarmOccurrenceModel.updateOne(
-      { _id: occurrence._id },
-      {
-        $set: {
-          alarmSnooze,
-          snoozeDuration,
-          snoozeAt: snoozeTimestamp,
-          alarmDuration: durationInSeconds,
+      await this.alarmOccurrenceModel.updateOne(
+        { _id: occurrence._id },
+        {
+          $set: {
+            alarmSnooze,
+            snoozeDuration,
+            snoozeAt: snoozeTimestamp,
+            alarmDuration: durationInSeconds,
+          },
         },
-      },
-    );
+      );
+    }
+
+    return {
+      message: 'Alarm snoozed successfully',
+    };
   }
 
-  return {
-    message: 'Alarm snoozed successfully',
-  };
-}
+  async getParamOptions(category?: string) {
+    let query = {};
+
+    if (category) {
+      query = { category: category };
+    }
+
+    const docs = await this.connection
+      .collection('params')
+      .find(query)
+      .project({ _id: 0, options: 1, category: 1 })
+      .toArray();
+
+    if (!docs || docs.length === 0) {
+      if (category) {
+        throw new HttpException(
+          `Parameter options not found for category: ${category}`,
+          404,
+        );
+      }
+      return [];
+    }
+
+    // If multiple categories requested, return array of all
+    // If specific category requested, return just its options
+    if (category) {
+      return docs[0].options;
+    }
+
+    return docs;
+  }
 }
