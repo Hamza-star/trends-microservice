@@ -125,8 +125,8 @@ export class AlarmsController {
   }
 
   // @UseGuards(JwtAuthGuard)
-  @Get('param-options')
-  async getParamOptions(@Query('category') category?: string) {
-    return this.alarmsService.getParamOptions(category);
-  }
+@Get('param-options')
+async getParamOptions() {
+  return this.alarmsService.getParamOptions();
+}
 }

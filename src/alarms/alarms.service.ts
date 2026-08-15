@@ -1640,35 +1640,43 @@ export class AlarmsService {
     };
   }
 
-  async getParamOptions(category?: string) {
-    let query = {};
+async getParamOptions(category?: string) {
+  let query = {};
 
-    if (category) {
-      query = { category: category };
-    }
-
-    const docs = await this.connection
-      .collection('params')
-      .find(query)
-      .project({ _id: 0, options: 1, category: 1 })
-      .toArray();
-
-    if (!docs || docs.length === 0) {
-      if (category) {
-        throw new HttpException(
-          `Parameter options not found for category: ${category}`,
-          404,
-        );
-      }
-      return [];
-    }
-
-    // If multiple categories requested, return array of all
-    // If specific category requested, return just its options
-    if (category) {
-      return docs[0].options;
-    }
-
-    return docs;
+  if (category) {
+    query = { category: category };
   }
+
+  // DEBUG: Check total documents
+  const totalDocs = await this.connection.collection('params').countDocuments();
+ 
+
+  // DEBUG: Check all documents
+  const allDocs = await this.connection.collection('params').find({}).toArray();
+  console.log('All documents:', JSON.stringify(allDocs, null, 2));
+
+  const docs = await this.connection
+    .collection('params')
+    .find(query)
+    .project({ _id: 0, options: 1, category: 1 })
+    .toArray();
+
+  
+
+  if (!docs || docs.length === 0) {
+    if (category) {
+      throw new HttpException(
+        `Parameter options not found for category: ${category}`,
+        404,
+      );
+    }
+    return [];
+  }
+
+  if (category) {
+    return docs[0]?.options || [];
+  }
+
+  return docs;
+}
 }
