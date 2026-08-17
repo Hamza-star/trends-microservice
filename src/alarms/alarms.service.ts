@@ -929,7 +929,8 @@ export class AlarmsService {
         .map((l) => ({
           threshold: l.threshold,
           value: l.value,
-          location: l.alarmLocation,
+          // location: l.alarmLocation,
+          location: l.alarmDevice,
           device: l.alarmDevice,
           parameter: l.alarmParameter,
         })),
@@ -1020,7 +1021,8 @@ export class AlarmsService {
     payload: Record<string, number>,
     logic: Logic,
   ): { key: string; value: number } | null {
-    const targetLocation = logic.alarmLocation?.toLowerCase().trim() || '';
+    // const targetLocation = logic.alarmLocation?.toLowerCase().trim() || '';
+    const targetLocation = logic.alarmDevice?.toLowerCase().trim() || '';
     const targetParameter = logic.alarmParameter?.toLowerCase().trim() || '';
 
     const { locationSegments, parameterSegments } = this.buildTargetSegments(
@@ -1300,7 +1302,8 @@ export class AlarmsService {
               const triggeredOcc = occs.find((occ) =>
                 occ.logicStatuses?.some(
                   (ls) =>
-                    ls.alarmLocation === logic.alarmLocation &&
+                    // ls.alarmLocation === logic.alarmLocation &&
+                    ls.alarmLocation === logic.alarmDevice &&
                     ls.alarmSubLocation === logic.alarmSubLocation &&
                     ls.alarmDevice === logic.alarmDevice &&
                     ls.alarmParameter === logic.alarmParameter &&
@@ -1313,7 +1316,8 @@ export class AlarmsService {
                 triggeredCount: occs.filter((occ) =>
                   occ.logicStatuses?.some(
                     (ls) =>
-                      ls.alarmLocation === logic.alarmLocation &&
+                      // ls.alarmLocation === logic.alarmLocation &&
+                      ls.alarmLocation === logic.alarmDevice &&
                       ls.alarmSubLocation === logic.alarmSubLocation &&
                       ls.alarmDevice === logic.alarmDevice &&
                       ls.alarmParameter === logic.alarmParameter &&
