@@ -36,7 +36,7 @@ import {
   TriggeredAlarmResponse,
   TriggeredAlarmThreshold,
 } from './types/alarm-types';
-import { AreaService } from 'src/areas/areas.service';
+
 
 @Injectable()
 export class AlarmsService {
@@ -52,7 +52,7 @@ export class AlarmsService {
     private readonly httpService: HttpService,
     @InjectModel('Users') private userModel: Model<any>,
     @InjectConnection() private readonly connection: Connection,
-    // private readonly areaService: AreaService,
+
   ) { }
 
   private readonly intervalsSec = [5, 15, 30, 60, 120];
@@ -155,7 +155,7 @@ export class AlarmsService {
       ...logic,
       // Remove the PG_PC_ prefix - just use the provided location as is
       // alarmLocation: logic.alarmLocation,
-      alarmLocation: logic.alarmDevice,
+      // alarmLocation: logic.alarmDevice,
     }));
 
     const alarm = new this.alarmsModel({
@@ -224,11 +224,12 @@ export class AlarmsService {
     if (Logics && Array.isArray(Logics)) {
       const enhancedLogics = Logics.map((logic) => ({
         ...logic,
-        alarmLocation: logic.alarmDevice,
         thresholds: logic.thresholds || [],
       })) as Logic[];
       updateData.Logics = enhancedLogics;
     }
+
+
 
     // Handle alarmTriggerConfig update
     if (alarmTriggerConfig) {
@@ -929,8 +930,8 @@ export class AlarmsService {
         .map((l) => ({
           threshold: l.threshold,
           value: l.value,
-          // location: l.alarmLocation,
-          location: l.alarmDevice,
+          location: l.alarmLocation,
+          // location: l.alarmDevice,
           device: l.alarmDevice,
           parameter: l.alarmParameter,
         })),

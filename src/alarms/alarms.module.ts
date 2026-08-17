@@ -28,11 +28,11 @@ import { UsersSchema } from 'src/users/schema/users.schema';
       { name: AlarmRulesSet.name, schema: AlarmRulesSetSchema },
       { name: Alarms.name, schema: AlarmsSchema },
       { name: AlarmOccurrence.name, schema: AlarmsOccurrenceSchema },
-      { name: 'Users', schema: UsersSchema }, 
+      { name: 'Users', schema: UsersSchema },
     ]),
   ],
   controllers: [AlarmsController],
   providers: [AlarmsService],
   exports: [AlarmsService],
 })
-export class AlarmsModule {}
+export class AlarmsModule { }
