@@ -36,6 +36,7 @@ import {
   TriggeredAlarmResponse,
   TriggeredAlarmThreshold,
 } from './types/alarm-types';
+import { AreaService } from 'src/areas/areas.service';
 
 @Injectable()
 export class AlarmsService {
@@ -51,6 +52,7 @@ export class AlarmsService {
     private readonly httpService: HttpService,
     @InjectModel('Users') private userModel: Model<any>,
     @InjectConnection() private readonly connection: Connection,
+    // private readonly areaService: AreaService,
   ) { }
 
   private readonly intervalsSec = [5, 15, 30, 60, 120];
@@ -152,7 +154,8 @@ export class AlarmsService {
     const enhancedLogics = dto.Logics.map((logic) => ({
       ...logic,
       // Remove the PG_PC_ prefix - just use the provided location as is
-      alarmLocation: logic.alarmLocation,
+      // alarmLocation: logic.alarmLocation,
+      alarmLocation: logic.alarmDevice,
     }));
 
     const alarm = new this.alarmsModel({
@@ -207,12 +210,21 @@ export class AlarmsService {
     }
 
     // Handle Logics update with ER_ prefix
+    // if (Logics && Array.isArray(Logics)) {
+    //   const enhancedLogics = Logics.map((logic) => ({
+    //     ...logic,
+    //     alarmLocation: logic.alarmLocation.startsWith('ER_')
+    //       ? logic.alarmLocation
+    //       : `${logic.alarmLocation}`,
+    //     thresholds: logic.thresholds || [],
+    //   })) as Logic[];
+    //   updateData.Logics = enhancedLogics;
+    // }
+
     if (Logics && Array.isArray(Logics)) {
       const enhancedLogics = Logics.map((logic) => ({
         ...logic,
-        alarmLocation: logic.alarmLocation.startsWith('ER_')
-          ? logic.alarmLocation
-          : `${logic.alarmLocation}`,
+        alarmLocation: logic.alarmDevice,
         thresholds: logic.thresholds || [],
       })) as Logic[];
       updateData.Logics = enhancedLogics;
@@ -1640,43 +1652,25 @@ export class AlarmsService {
     };
   }
 
-async getParamOptions(category?: string) {
-  let query = {};
+  async getParamOptions(category?: string) {
+    // Get single document
+    const doc = await this.connection
+      .collection('params')
+      .findOne({});
 
-  if (category) {
-    query = { category: category };
-  }
-
-  // DEBUG: Check total documents
-  const totalDocs = await this.connection.collection('params').countDocuments();
- 
-
-  // DEBUG: Check all documents
-  const allDocs = await this.connection.collection('params').find({}).toArray();
-  console.log('All documents:', JSON.stringify(allDocs, null, 2));
-
-  const docs = await this.connection
-    .collection('params')
-    .find(query)
-    .project({ _id: 0, options: 1, category: 1 })
-    .toArray();
-
-  
-
-  if (!docs || docs.length === 0) {
-    if (category) {
-      throw new HttpException(
-        `Parameter options not found for category: ${category}`,
-        404,
-      );
+    if (!doc) {
+      return [];
     }
-    return [];
-  }
 
-  if (category) {
-    return docs[0]?.options || [];
-  }
+    const allOptions = doc.paramOptions || [];
 
-  return docs;
-}
+    // If category provided, filter
+    if (category) {
+      const filtered = allOptions.find(item => item.category === category);
+      return filtered?.options || [];
+    }
+
+    // Return all categories with options
+    return allOptions;
+  }
 }
