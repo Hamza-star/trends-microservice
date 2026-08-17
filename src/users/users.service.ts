@@ -69,7 +69,7 @@ export class UsersService {
     private readonly privellegesModel: Model<PrivellegesDocument>,
     @InjectModel('Menu') private readonly menuModel: Model<any>,
     private readonly authorizationPolicy: AuthorizationPolicy,
-  ) {}
+  ) { }
 
   async addUser(
     name: string,
@@ -376,16 +376,11 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    if (dto.newPassword || (dto.email && dto.email.toLowerCase() !== user.email.toLowerCase())) {
+    if (dto.newPassword) {
       if (!dto.currentPassword) {
-        throw new BadRequestException('Current password is required to update email or password');
+        throw new BadRequestException('Current password is required to update password');
       }
 
-      const isPasswordValid = await bcrypt.compare(dto.currentPassword, user.password);
-      if (!isPasswordValid) {
-        throw new BadRequestException('Invalid current password');
-      }
-    } else if (dto.currentPassword) {
       const isPasswordValid = await bcrypt.compare(dto.currentPassword, user.password);
       if (!isPasswordValid) {
         throw new BadRequestException('Invalid current password');
