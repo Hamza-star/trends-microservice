@@ -687,10 +687,30 @@ export class AlarmsService {
       return [];
     }
 
+    // const [alarms, activeOccurrences] = await Promise.all([
+    //   this.alarmsModel.find().populate('alarmTypeId').lean(),
+    //   this.alarmOccurrenceModel.find({ alarmStatus: true }).lean(),
+    // ]);
+
     const [alarms, activeOccurrences] = await Promise.all([
-      this.alarmsModel.find().populate('alarmTypeId').lean(),
+      this.alarmsModel
+        .find()
+        .populate({
+          path: 'alarmTypeId',
+          model: 'AlarmsType',
+        })
+        .lean()
+        .exec(),
       this.alarmOccurrenceModel.find({ alarmStatus: true }).lean(),
     ]);
+
+    if (alarms.length > 0) {
+      this.logger.debug('First alarm typeId:', {
+        hasAlarmTypeId: !!alarms[0].alarmTypeId,
+        alarmTypeIdType: typeof alarms[0].alarmTypeId,
+        alarmTypeId: alarms[0].alarmTypeId,
+      });
+    }
 
     this.logger.debug('Loaded alarm configs', { count: alarms.length });
 
@@ -915,13 +935,15 @@ export class AlarmsService {
     occurrence: AlarmsOccurrenceDocument,
     logicStatuses: LogicEvaluationStatus[],
   ): TriggeredAlarmResponse {
+    const alarmType = alarm.alarmTypeId as AlarmsType;
     return {
       alarmOccurrenceId: occurrence._id,
       alarmOccurenceId: occurrence._id,
       alarmName: alarm.alarmName,
       alarmStatus: true,
-      alarmType: (alarm.alarmTypeId as AlarmsType)?.type,
-      priority: (alarm.alarmTypeId as AlarmsType)?.priority,
+      // alarmType: (alarm.alarmTypeId as AlarmsType)?.type,
+      // priority: (alarm.alarmTypeId as AlarmsType)?.priority,
+      alarmType: alarmType,
       triggeredAt: occurrence.date,
       snooze: occurrence.alarmSnooze || false,
       alarmAcknowledgeStatus: occurrence.alarmAcknowledgeStatus,

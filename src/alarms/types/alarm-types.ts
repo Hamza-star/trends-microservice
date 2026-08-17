@@ -43,7 +43,8 @@ export interface TriggeredAlarmResponse {
   alarmOccurenceId: string | Types.ObjectId;
   alarmName: string;
   alarmStatus: boolean;
-  alarmType?: string;
+  alarmType?: AlarmsType;
+  // alarmType?: string;
   priority?: number;
   triggeredAt: Date;
   snooze: boolean;
