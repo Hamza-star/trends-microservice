@@ -1,28 +1,33 @@
-import { Type } from "class-transformer";
-import { IsString,IsOptional, ValidateNested } from "class-validator";
-import { ThresholdDto } from "./threshold.dto";
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsString, IsOptional, ValidateNested } from 'class-validator';
+import { ThresholdDto } from './threshold.dto';
 
 export class LogicDto {
+  @ApiProperty({ example: 'Z1_GW0_EM01', description: 'Location token(s) used to match the payload key' })
   @IsString()
-  // The location token(s) used for matching the payload key.
-  // Example: "Z1_GW0_EM01" or "U1_GW01".
   alarmLocation: string;
 
+  @ApiPropertyOptional({ example: 'SubZone_A', description: 'Optional sub-location segment for finer matching' })
   @IsString()
   @IsOptional()
   alarmSubLocation?: string;
 
+  @ApiPropertyOptional({ example: 'EM01', description: 'Optional device segment for finer matching' })
   @IsString()
   @IsOptional()
   alarmDevice?: string;
 
+  @ApiProperty({ example: 'V_L1_N', description: 'Parameter suffix used to match the payload key ending' })
   @IsString()
-  // The parameter suffix used for matching the payload key ending.
-  // Example: "V_L1_N" or "Voltage_AB".
   alarmParameter: string;
 
+  @ApiPropertyOptional({
+    type: () => [ThresholdDto],
+    description: 'Optional list of threshold conditions that must be met to trigger the alarm',
+  })
   @ValidateNested({ each: true })
   @Type(() => ThresholdDto)
   @IsOptional()
   thresholds?: ThresholdDto[];
-}
+}
