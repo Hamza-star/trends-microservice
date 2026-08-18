@@ -373,40 +373,39 @@ export class AlarmsService {
    * @param id The ID of the alarm type to delete.
    * @returns A message indicating the result of the deletion.
    */
-  async deleteAlarmType(id: string) {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('Invalid alarm type ID');
-    }
-
-    const objectId = new Types.ObjectId(id);
-    const relatedAlarmsCount = await this.alarmsModel.countDocuments({
-      alarmTypeId: objectId,
-    });
-
-    if (relatedAlarmsCount > 0) {
-      const relatedAlarms = await this.alarmsModel
-        .find({ alarmTypeId: objectId })
-        .select('alarmName')
-        .lean();
-
-      throw new BadRequestException({
-        message: `Cannot delete AlarmType. It is used in ${relatedAlarmsCount} alarms.`,
-        count: relatedAlarmsCount,
-        alarms: relatedAlarms.map((a) => a.alarmName),
-      });
-    }
-
-    const deleted = await this.alarmTypeModel.findByIdAndDelete(id);
-
-    if (!deleted) {
-      throw new NotFoundException(`Alarm Type with ID ${id} not found`);
-    }
-
-    return {
-      message: 'Alarm Type deleted successfully',
-      data: deleted,
-    };
+async deleteAlarmType(id: string) {
+  if (!Types.ObjectId.isValid(id)) {
+    throw new BadRequestException('Invalid alarm type ID');
   }
+
+  const objectId = new Types.ObjectId(id);
+
+  // Single query now — fetch the related alarms directly instead of
+  // counting first and then querying again for the same data
+  const relatedAlarms = await this.alarmsModel
+    .find({ alarmTypeId: objectId })
+    .select('alarmName')
+    .lean();
+
+  if (relatedAlarms.length > 0) {
+    throw new BadRequestException({
+      message: `Cannot delete AlarmType. It is used in ${relatedAlarms.length} alarms.`,
+      count: relatedAlarms.length,
+      alarms: relatedAlarms.map((a) => a.alarmName),
+    });
+  }
+
+  const deleted = await this.alarmTypeModel.findByIdAndDelete(id);
+
+  if (!deleted) {
+    throw new NotFoundException(`Alarm Type with ID ${id} not found`);
+  }
+
+  return {
+    message: 'Alarm Type deleted successfully',
+    data: deleted,
+  };
+}
 
   /**
    * Get all alarm configurations.
@@ -618,56 +617,75 @@ export class AlarmsService {
    * This updates the last occurrence, duration, and resolve time.
    */
 
-  private async deactivateResolvedAlarms(activeConfigIds: Set<string>) {
-    const now = new Date();
+ private async deactivateResolvedAlarms(activeConfigIds: Set<string>) {
+  const now = new Date();
 
-    const activeEvents = await this.alarmsEventModel
-      .find({})
-      .populate({
-        path: 'alarmOccurrences',
-        model: AlarmOccurrence.name,
-        match: { alarmStatus: true },
-      })
-      .exec();
+  const activeEvents = await this.alarmsEventModel
+    .find({})
+    .populate({
+      path: 'alarmOccurrences',
+      model: AlarmOccurrence.name,
+      match: { alarmStatus: true },
+    })
+    .exec();
 
-    for (const ev of activeEvents) {
-      const cfgId = ev.alarmConfigId?.toString?.() ?? '';
+  const eventBulkOps: any[] = [];
+  const occurrenceBulkOps: any[] = [];
 
-      if (!activeConfigIds.has(cfgId)) {
-        ev.alarmLastOccurrence = now;
+  for (const ev of activeEvents) {
+    const cfgId = ev.alarmConfigId?.toString?.() ?? '';
 
-        if (ev.alarmFirstOccurrence) {
-          const triggerTime = new Date(ev.alarmFirstOccurrence).getTime();
-          const currentTime = now.getTime();
-          const durationSec = Math.floor((currentTime - triggerTime) / 1000);
+    if (!activeConfigIds.has(cfgId)) {
+      eventBulkOps.push({
+        updateOne: {
+          filter: { _id: ev._id },
+          update: { $set: { alarmLastOccurrence: now } },
+        },
+      });
 
-          if (ev.alarmOccurrences?.length) {
-            const lastOccurrence = ev.alarmOccurrences[ev.alarmOccurrences.length - 1];
-            const lastOccurrenceId = lastOccurrence._id ?? lastOccurrence;
+      if (ev.alarmFirstOccurrence) {
+        const triggerTime = new Date(ev.alarmFirstOccurrence).getTime();
+        const currentTime = now.getTime();
+        const durationSec = Math.floor((currentTime - triggerTime) / 1000);
 
-            try {
-              await this.alarmOccurrenceModel.findByIdAndUpdate(
-                lastOccurrenceId,
-                {
+        if (ev.alarmOccurrences?.length) {
+          const lastOccurrence = ev.alarmOccurrences[ev.alarmOccurrences.length - 1];
+          const lastOccurrenceId = lastOccurrence._id ?? lastOccurrence;
+
+          occurrenceBulkOps.push({
+            updateOne: {
+              filter: { _id: lastOccurrenceId },
+              update: {
+                $set: {
                   alarmStatus: false,
                   alarmDuration: durationSec,
-                  resolveTime: now, // - Set resolve time
+                  resolveTime: now,
                 },
-              );
-            } catch (err: any) {
-              this.logger.error(
-                'Failed to update occurrence duration',
-                err?.message ?? err,
-                err,
-              );
-            }
-          }
+              },
+            },
+          });
         }
-
-        await ev.save();
       }
     }
   }
+
+  try {
+    if (eventBulkOps.length) {
+      await this.alarmsEventModel.bulkWrite(eventBulkOps);
+    }
+    if (occurrenceBulkOps.length) {
+      await this.alarmOccurrenceModel.bulkWrite(occurrenceBulkOps);
+    }
+  } catch (err: any) {
+    this.logger.error(
+      'Failed to bulk update deactivated alarms',
+      err?.message ?? err,
+      err,
+    );
+  }
+}
+
+  
 
   /**
    * Process all active alarms by fetching data from configured endpoints
@@ -675,94 +693,194 @@ export class AlarmsService {
    */
 
 
-  async processActiveAlarms() {
-    const allPayloads = await this.fetchAlarmPayloads();
+ async processActiveAlarms() {
+  const allPayloads = await this.fetchAlarmPayloads();
 
-    this.logger.debug('Active alarm payload count', {
-      count: Object.keys(allPayloads).length,
-      sampleKeys: Object.keys(allPayloads).slice(0, 25),
-    });
+  // this.logger.debug('Active alarm payload count', {
+  //   count: Object.keys(allPayloads).length,
+  //   sampleKeys: Object.keys(allPayloads).slice(0, 25),
+  // });
 
-    if (!Object.keys(allPayloads).length) {
-      return [];
-    }
-
-    // const [alarms, activeOccurrences] = await Promise.all([
-    //   this.alarmsModel.find().populate('alarmTypeId').lean(),
-    //   this.alarmOccurrenceModel.find({ alarmStatus: true }).lean(),
-    // ]);
-
-    const [alarms, activeOccurrences] = await Promise.all([
-      this.alarmsModel
-        .find()
-        .populate({
-          path: 'alarmTypeId',
-          model: 'AlarmsType',
-        })
-        .lean()
-        .exec(),
-      this.alarmOccurrenceModel.find({ alarmStatus: true }).lean(),
-    ]);
-
-    if (alarms.length > 0) {
-      this.logger.debug('First alarm typeId:', {
-        hasAlarmTypeId: !!alarms[0].alarmTypeId,
-        alarmTypeIdType: typeof alarms[0].alarmTypeId,
-        alarmTypeId: alarms[0].alarmTypeId,
-      });
-    }
-
-    this.logger.debug('Loaded alarm configs', { count: alarms.length });
-
-    const triggeredAlarms: TriggeredAlarmResponse[] = [];
-    const activeConfigIds = new Set<string>();
-
-    for (const alarm of alarms as AlarmConfigDocument[]) {
-      if (!alarm.Logics?.length) continue;
-
-      const activeOccurrence = activeOccurrences.find(
-        (o) => o.alarmConfigId?.toString() === alarm._id.toString(),
-      );
-
-      if (await this.isAlarmSnoozed(activeOccurrence)) {
-        continue;
-      }
-
-      const logicStatuses = alarm.Logics.map((logic: Logic) =>
-        this.evaluateLogicStatus(logic, allPayloads),
-      );
-
-      const shouldTrigger = this.shouldTriggerAlarm(
-        alarm.LogicConfiguration,
-        logicStatuses,
-      );
-
-      if (!shouldTrigger) {
-        if (activeOccurrence) {
-          await this.resolveActiveOccurrence(activeOccurrence);
-        }
-        continue;
-      }
-
-      const occurrence = await this.createOrUpdateActiveOccurrence(
-        alarm,
-        activeOccurrence,
-        logicStatuses,
-      );
-
-      if (!occurrence) {
-        continue;
-      }
-
-      activeConfigIds.add(alarm._id.toString());
-      triggeredAlarms.push(
-        this.buildTriggeredAlarmResponse(alarm, occurrence, logicStatuses),
-      );
-    }
-
-    await this.deactivateResolvedAlarms(activeConfigIds);
-    return triggeredAlarms;
+  if (!Object.keys(allPayloads).length) {
+    return [];
   }
+
+  const [alarms, activeOccurrences] = await Promise.all([
+    this.alarmsModel
+      .find()
+      .populate({
+        path: 'alarmTypeId',
+        model: 'AlarmsType',
+      })
+      .lean()
+      .exec(),
+    this.alarmOccurrenceModel.find({ alarmStatus: true }).lean(),
+  ]);
+
+  if (alarms.length > 0) {
+    // this.logger.debug('First alarm typeId:', {
+    //   hasAlarmTypeId: !!alarms[0].alarmTypeId,
+    //   alarmTypeIdType: typeof alarms[0].alarmTypeId,
+    //   alarmTypeId: alarms[0].alarmTypeId,
+    // });
+  }
+
+  // this.logger.debug('Loaded alarm configs', { count: alarms.length });
+
+  // Build the payload index ONCE — instead of re-tokenizing payload keys
+  // for every single logic of every single alarm
+  const payloadIndex = this.buildPayloadIndex(allPayloads);
+
+  const triggeredAlarms: TriggeredAlarmResponse[] = [];
+  const activeConfigIds = new Set<string>();
+
+  for (const alarm of alarms as AlarmConfigDocument[]) {
+    if (!alarm.Logics?.length) continue;
+
+    const activeOccurrence = activeOccurrences.find(
+      (o) => o.alarmConfigId?.toString() === alarm._id.toString(),
+    );
+
+    if (await this.isAlarmSnoozed(activeOccurrence)) {
+      continue;
+    }
+
+    const logicStatuses = alarm.Logics.map((logic: Logic) =>
+      this.evaluateLogicStatus(logic, payloadIndex),
+    );
+
+    const shouldTrigger = this.shouldTriggerAlarm(
+      alarm.LogicConfiguration,
+      logicStatuses,
+    );
+
+    if (!shouldTrigger) {
+      if (activeOccurrence) {
+        await this.resolveActiveOccurrence(activeOccurrence);
+      }
+      continue;
+    }
+
+    const occurrence = await this.createOrUpdateActiveOccurrence(
+      alarm,
+      activeOccurrence,
+      logicStatuses,
+    );
+
+    if (!occurrence) {
+      continue;
+    }
+
+    activeConfigIds.add(alarm._id.toString());
+    triggeredAlarms.push(
+      this.buildTriggeredAlarmResponse(alarm, occurrence, logicStatuses),
+    );
+  }
+
+  await this.deactivateResolvedAlarms(activeConfigIds);
+  return triggeredAlarms;
+}
+
+/**
+ * Pre-tokenize every payload key ONCE so it can be reused across all
+ * alarms/logics, instead of re-splitting the same keys repeatedly.
+ */
+private buildPayloadIndex(
+  payload: Record<string, number>,
+): { key: string; value: number; segments: string[] }[] {
+  return Object.entries(payload).map(([key, value]) => ({
+    key,
+    value,
+    segments: key
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((segment) => segment.length > 0),
+  }));
+}
+
+private evaluateLogicStatus(
+  logic: Logic,
+  payloadIndex: { key: string; value: number; segments: string[] }[],
+): LogicEvaluationStatus {
+  const matched = this.findMatchingData(payloadIndex, logic);
+  const matchedValue = matched?.value;
+  const triggeredThreshold =
+    matchedValue !== undefined
+      ? this.getTriggeredThreshold(matchedValue, logic.thresholds)
+      : null;
+
+  const status: LogicEvaluationStatus = {
+    alarmLocation: logic.alarmLocation,
+    alarmSubLocation: logic.alarmSubLocation,
+    alarmDevice: logic.alarmDevice,
+    alarmParameter: logic.alarmParameter,
+    value: matchedValue,
+    threshold: triggeredThreshold ?? undefined,
+    isTriggered: !!triggeredThreshold,
+  };
+
+  // this.logger.debug('Logic evaluation', {
+  //   location: logic.alarmLocation,
+  //   subLocation: logic.alarmSubLocation,
+  //   device: logic.alarmDevice,
+  //   parameter: logic.alarmParameter,
+  //   matchedKey: matched?.key || null,
+  //   matchedValue,
+  //   threshold: triggeredThreshold,
+  //   isTriggered: status.isTriggered,
+  // });
+
+  return status;
+}
+
+/**
+ * Match a payload key to the alarm logic using only location and parameter.
+ * Now operates on a pre-tokenized payload index instead of re-splitting
+ * every payload key on every call.
+ */
+private findMatchingData(
+  payloadIndex: { key: string; value: number; segments: string[] }[],
+  logic: Logic,
+): { key: string; value: number } | null {
+  const targetLocation = logic.alarmDevice?.toLowerCase().trim() || '';
+  const targetParameter = logic.alarmParameter?.toLowerCase().trim() || '';
+
+  const { locationSegments, parameterSegments } = this.buildTargetSegments(
+    targetLocation,
+    targetParameter,
+  );
+
+  // this.logger.debug('Looking for alarm key match', {
+  //   location: targetLocation,
+  //   parameter: targetParameter,
+  //   locationSegments,
+  //   parameterSegments,
+  // });
+
+  for (const { key, value, segments } of payloadIndex) {
+    if (
+      this.matchesPayloadKey(segments, locationSegments, parameterSegments)
+    ) {
+      // this.logger.debug('Found match for logic', {
+      //   logic: targetLocation,
+      //   payloadKey: key,
+      //   keySegments: segments,
+      //   locationSegments,
+      //   parameterSegments,
+      // });
+      return { key, value };
+    }
+  }
+
+  // this.logger.debug('No payload match found for logic', {
+  //   location: targetLocation,
+  //   parameter: targetParameter,
+  //   locationSegments,
+  //   parameterSegments,
+  // });
+
+  return null;
+}
 
   private async fetchAlarmPayloads(): Promise<Record<string, number>> {
     const alarmsLinksStr = process.env.NODERED_URL;
@@ -809,7 +927,7 @@ export class AlarmsService {
       this.processDataStructure(rawData, allPayloads);
     });
 
-    this.logger.debug(`Aggregated payload count after processing: ${Object.keys(allPayloads).length}`);
+    // this.logger.debug(`Aggregated payload count after processing: ${Object.keys(allPayloads).length}`);
     return allPayloads;
   }
 
@@ -837,40 +955,6 @@ export class AlarmsService {
     return false;
   }
 
-  private evaluateLogicStatus(
-    logic: Logic,
-    payloads: PayloadMap,
-  ): LogicEvaluationStatus {
-    const matched = this.findMatchingData(payloads, logic);
-    const matchedValue = matched?.value;
-    const triggeredThreshold =
-      matchedValue !== undefined
-        ? this.getTriggeredThreshold(matchedValue, logic.thresholds)
-        : null;
-
-    const status: LogicEvaluationStatus = {
-      alarmLocation: logic.alarmLocation,
-      alarmSubLocation: logic.alarmSubLocation,
-      alarmDevice: logic.alarmDevice,
-      alarmParameter: logic.alarmParameter,
-      value: matchedValue,
-      threshold: triggeredThreshold ?? undefined,
-      isTriggered: !!triggeredThreshold,
-    };
-
-    this.logger.debug('Logic evaluation', {
-      location: logic.alarmLocation,
-      subLocation: logic.alarmSubLocation,
-      device: logic.alarmDevice,
-      parameter: logic.alarmParameter,
-      matchedKey: matched?.key || null,
-      matchedValue,
-      threshold: triggeredThreshold,
-      isTriggered: status.isTriggered,
-    });
-
-    return status;
-  }
 
   private shouldTriggerAlarm(
     logicConfiguration: any,
@@ -1032,63 +1116,6 @@ export class AlarmsService {
     }
   }
 
-  /**
-   * Match a payload key to the alarm logic using only location and parameter.
-   *
-   * - locationSegments are matched in order anywhere in the key.
-   * - parameterSegments are matched only at the end of the key (suffix match).
-   * - keys are split on non-alphanumeric characters, so underscore-separated payloads
-   *   like PG_PC_Z1_GW0_PLC1_EM01_V_L1_N and U1_GW01_Voltage_AB both work.
-   */
-  private findMatchingData(
-    payload: Record<string, number>,
-    logic: Logic,
-  ): { key: string; value: number } | null {
-    // const targetLocation = logic.alarmLocation?.toLowerCase().trim() || '';
-    const targetLocation = logic.alarmDevice?.toLowerCase().trim() || '';
-    const targetParameter = logic.alarmParameter?.toLowerCase().trim() || '';
-
-    const { locationSegments, parameterSegments } = this.buildTargetSegments(
-      targetLocation,
-      targetParameter,
-    );
-
-    this.logger.debug('Looking for alarm key match', {
-      location: targetLocation,
-      parameter: targetParameter,
-      locationSegments,
-      parameterSegments,
-    });
-
-    for (const [key, value] of Object.entries(payload)) {
-      const keySegments = key
-        .toLowerCase()
-        .split(/[^a-z0-9]+/)
-        .filter((segment) => segment.length > 0);
-
-      if (
-        this.matchesPayloadKey(keySegments, locationSegments, parameterSegments)
-      ) {
-        this.logger.debug('Found match for logic', {
-          logic: targetLocation,
-          payloadKey: key,
-          keySegments,
-          locationSegments,
-          parameterSegments,
-        });
-        return { key, value };
-      }
-    }
-
-    this.logger.debug('No payload match found for logic', {
-      location: targetLocation,
-      parameter: targetParameter,
-      locationSegments,
-      parameterSegments,
-    });
-
-    return null;
-  }
 
   /**
    * Build token segments for matching.
@@ -1398,105 +1425,89 @@ export class AlarmsService {
 
 
 
-  async acknowledgeOne(
-    occurrenceId: string,
-    action: string,
-    acknowledgedBy: string,
-  ) {
-    // 1. Validate IDs
-    if (!Types.ObjectId.isValid(occurrenceId)) {
-      throw new BadRequestException('Invalid occurrence ID');
-    }
+async acknowledgeOne(
+  occurrenceId: string,
+  action: string,
+  acknowledgedBy: string,
+) {
+  // 1. Validate IDs
+  if (!Types.ObjectId.isValid(occurrenceId)) {
+    throw new BadRequestException('Invalid occurrence ID');
+  }
 
-    if (!Types.ObjectId.isValid(acknowledgedBy)) {
-      throw new BadRequestException('Invalid acknowledgedBy ID');
-    }
+  if (!Types.ObjectId.isValid(acknowledgedBy)) {
+    throw new BadRequestException('Invalid acknowledgedBy ID');
+  }
 
-    // 2. Find occurrence
-    const occurrence = await this.alarmOccurrenceModel.findById(occurrenceId);
-    if (!occurrence) {
-      throw new NotFoundException('Occurrence not found');
-    }
+  // 2. Find occurrence
+  const occurrence = await this.alarmOccurrenceModel.findById(occurrenceId);
+  if (!occurrence) {
+    throw new NotFoundException('Occurrence not found');
+  }
 
-    if (occurrence.alarmAcknowledgeStatus === 'Acknowledged') {
-      throw new BadRequestException('This occurrence is already acknowledged');
-    }
+  if (occurrence.alarmAcknowledgeStatus === 'Acknowledged') {
+    throw new BadRequestException('This occurrence is already acknowledged');
+  }
 
-    // 3. Update occurrence
-    const now = new Date();
-    const delay = (now.getTime() - new Date(occurrence.date).getTime()) / 1000;
-    const durationInSeconds = this.calculateDuration(occurrence.date);
+  // 3. Update occurrence
+  const now = new Date();
+  const delay = (now.getTime() - new Date(occurrence.date).getTime()) / 1000;
+  const durationInSeconds = this.calculateDuration(occurrence.date);
 
-    occurrence.alarmAcknowledgeStatus = 'Acknowledged';
-    occurrence.alarmAcknowledgmentAction = action;
-    occurrence.alarmAcknowledgedBy = new Types.ObjectId(acknowledgedBy);
-    occurrence.alarmAcknowledgedDelay = delay;
-    occurrence.alarmDuration = durationInSeconds;
-    await occurrence.save();
+  occurrence.alarmAcknowledgeStatus = 'Acknowledged';
+  occurrence.alarmAcknowledgmentAction = action;
+  occurrence.alarmAcknowledgedBy = new Types.ObjectId(acknowledgedBy);
+  occurrence.alarmAcknowledgedDelay = delay;
+  occurrence.alarmDuration = durationInSeconds;
+  await occurrence.save();
 
-    // 4. Update parent alarm
-    const parentAlarm = await this.alarmsEventModel.findOne({
-      alarmOccurrences: occurrence._id,
+  // 4. Update parent alarm
+  const parentAlarm = await this.alarmsEventModel.findOne({
+    alarmOccurrences: occurrence._id,
+  });
+
+  if (parentAlarm) {
+    const acknowledgedCount = await this.alarmOccurrenceModel.countDocuments({
+      _id: { $in: parentAlarm.alarmOccurrences },
+      alarmAcknowledgeStatus: 'Acknowledged',
     });
 
-    if (parentAlarm) {
-      const acknowledgedCount = await this.alarmOccurrenceModel.countDocuments({
-        _id: { $in: parentAlarm.alarmOccurrences },
-        alarmAcknowledgeStatus: 'Acknowledged',
-      });
-
-      parentAlarm.alarmAcknowledgementStatusCount = acknowledgedCount;
-      await parentAlarm.save();
-    }
-
-    // 5. Fetch user details
-    const user = await this.userModel
-      .findById(acknowledgedBy)
-      .select('name email')
-      .lean();
-
-    // 6. Build occurrence response
-    const occurrenceObj = occurrence.toObject();
-    occurrenceObj.alarmAcknowledgedBy = user || null;
-
-    // 7. Build parent alarm response
-    let populatedParentAlarm: any = null;
-
-    if (parentAlarm) {
-      const parentAlarmObj = parentAlarm.toObject();
-
-      const populatedOccurrences = await Promise.all(
-        (parentAlarmObj.alarmOccurrences || []).map(async (occId: any) => {
-          const occ = await this.alarmOccurrenceModel
-            .findById(occId)
-            .lean();
-
-          let userDetail = null;
-          if (occ?.alarmAcknowledgedBy) {
-            userDetail = await this.userModel
-              .findById(occ.alarmAcknowledgedBy)
-              .select('name email')
-              .lean();
-          }
-
-          return {
-            ...occ,
-            alarmAcknowledgedBy: userDetail
-          };
-        })
-      );
-
-      populatedParentAlarm = {
-        ...parentAlarmObj,
-        alarmOccurrences: populatedOccurrences
-      };
-    }
-
-    return {
-      updatedOccurrences: [occurrenceObj],
-      parentAlarms: populatedParentAlarm ? [populatedParentAlarm] : [],
-    };
+    parentAlarm.alarmAcknowledgementStatusCount = acknowledgedCount;
+    await parentAlarm.save();
   }
+
+  // 5. Fetch user details
+  const user = await this.userModel
+    .findById(acknowledgedBy)
+    .select('name email')
+    .lean();
+
+  // 6. Build occurrence response
+  const occurrenceObj = occurrence.toObject();
+  occurrenceObj.alarmAcknowledgedBy = user || null;
+
+  // 7. Build parent alarm response using a single populate call
+  //    instead of manually looping through occurrences and users one by one
+  let populatedParentAlarm: any = null;
+
+  if (parentAlarm) {
+    populatedParentAlarm = await this.alarmsEventModel
+      .findById(parentAlarm._id)
+      .populate({
+        path: 'alarmOccurrences',
+        populate: {
+          path: 'alarmAcknowledgedBy',
+          select: 'name email',
+        },
+      })
+      .lean();
+  }
+
+  return {
+    updatedOccurrences: [occurrenceObj],
+    parentAlarms: populatedParentAlarm ? [populatedParentAlarm] : [],
+  };
+}
   /**
    * Acknowledge multiple occurrences at once
    * @param occurrenceIds Array of occurrence IDs to acknowledge
@@ -1504,166 +1515,210 @@ export class AlarmsService {
    * @returns Updated occurrences and parent alarms
    */
 
-  async acknowledgeMany(occurrenceIds: string[], acknowledgedBy: string) {
-    // 1. Validate
-    if (!Types.ObjectId.isValid(acknowledgedBy)) {
-      throw new BadRequestException('Invalid acknowledgedBy ID format');
+async acknowledgeMany(occurrenceIds: string[], acknowledgedBy: string) {
+  // 1. Validate
+  if (!Types.ObjectId.isValid(acknowledgedBy)) {
+    throw new BadRequestException('Invalid acknowledgedBy ID format');
+  }
+
+  const acknowledgedByObjectId = new Types.ObjectId(acknowledgedBy);
+  const now = new Date();
+
+  const objectIds = occurrenceIds.map((id) => {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException(`Invalid occurrence ID: ${id}`);
     }
+    return new Types.ObjectId(id);
+  });
 
-    const acknowledgedByObjectId = new Types.ObjectId(acknowledgedBy);
-    const now = new Date();
+  // Get occurrences first to calculate duration
+  const occurrencesToUpdate = await this.alarmOccurrenceModel.find({
+    _id: { $in: objectIds },
+    alarmAcknowledgeStatus: { $ne: 'Acknowledged' },
+  });
 
-    const objectIds = occurrenceIds.map((id) => {
-      if (!Types.ObjectId.isValid(id)) {
-        throw new BadRequestException(`Invalid occurrence ID: ${id}`);
-      }
-      return new Types.ObjectId(id);
-    });
+  // Bulk update occurrences instead of one-by-one
+  // FIX: 'as const' added so TS keeps the literal type ('Acknowledged')
+  // instead of widening it to a generic string, which bulkWrite() rejects.
+  const bulkOps = occurrencesToUpdate.map((occurrence) => {
+    const triggerTime = new Date(occurrence.date).getTime();
+    const currentTime = now.getTime();
+    const durationInSeconds = Math.floor((currentTime - triggerTime) / 1000);
+    const delay = (currentTime - triggerTime) / 1000;
 
-    // Get occurrences first to calculate duration
-    const occurrencesToUpdate = await this.alarmOccurrenceModel.find({
-      _id: { $in: objectIds },
-      alarmAcknowledgeStatus: { $ne: 'Acknowledged' },
-    });
-
-    // Update each occurrence with correct duration
-    for (const occurrence of occurrencesToUpdate) {
-      const triggerTime = new Date(occurrence.date).getTime();
-      const currentTime = now.getTime();
-      const durationInSeconds = Math.floor((currentTime - triggerTime) / 1000);
-      const delay = (currentTime - triggerTime) / 1000;
-
-      await this.alarmOccurrenceModel.updateOne(
-        { _id: occurrence._id },
-        {
+    return {
+      updateOne: {
+        filter: { _id: occurrence._id },
+        update: {
           $set: {
-            alarmAcknowledgeStatus: 'Acknowledged',
+            alarmAcknowledgeStatus: 'Acknowledged' as const,
             alarmAcknowledgmentAction: 'Auto Mass Acknowledged',
             alarmAcknowledgedBy: acknowledgedByObjectId,
             alarmAcknowledgedDelay: delay,
             alarmDuration: durationInSeconds,
           },
         },
-      );
+      },
+    };
+  });
+
+  if (bulkOps.length) {
+    await this.alarmOccurrenceModel.bulkWrite(bulkOps);
+  }
+
+  // Get user details once
+  const user = await this.userModel
+    .findById(acknowledgedBy)
+    .select('name email')
+    .lean();
+
+  // Get all occurrences with aggregation
+  const occurrences = await this.alarmOccurrenceModel.aggregate([
+    { $match: { _id: { $in: objectIds } } },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'alarmAcknowledgedBy',
+        foreignField: '_id',
+        as: 'acknowledgedByUser'
+      }
+    },
+    {
+      $unwind: {
+        path: '$acknowledgedByUser',
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
+      $project: {
+        'alarmAcknowledgedBy': {
+          _id: '$acknowledgedByUser._id',
+          name: '$acknowledgedByUser.name',
+          email: '$acknowledgedByUser.email'
+        },
+        date: 1,
+        alarmID: 1,
+        alarmStatus: 1,
+        alarmConfigId: 1,
+        logicStatuses: 1,
+        alarmAcknowledgeStatus: 1,
+        alarmAcknowledgmentAction: 1,
+        alarmAcknowledgedDelay: 1,
+        alarmAge: 1,
+        alarmDuration: 1,
+        alarmSnooze: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        resolveTime: 1,
+      }
     }
+  ]);
 
-    // Get user details once
-    const user = await this.userModel
-      .findById(acknowledgedBy) 
-      .select('name email')
-      .lean();
+  // Update parent alarms
+  const parentAlarms = await this.alarmsEventModel.find({
+    alarmOccurrences: { $in: objectIds },
+  });
 
-    // Get all occurrences with aggregation
-    const occurrences = await this.alarmOccurrenceModel.aggregate([
-      { $match: { _id: { $in: objectIds } } },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'alarmAcknowledgedBy',
-          foreignField: '_id',
-          as: 'acknowledgedByUser'
-        }
-      },
-      {
-        $unwind: {
-          path: '$acknowledgedByUser',
-          preserveNullAndEmptyArrays: true
-        }
-      },
+  if (parentAlarms.length) {
+    const parentIds = parentAlarms.map((p) => p._id);
+
+    // Single aggregation to get acknowledged-count for ALL parent alarms
+    // at once, instead of one countDocuments() call per parent alarm
+    const acknowledgedIds = await this.alarmOccurrenceModel
+      .find({ alarmAcknowledgeStatus: 'Acknowledged' })
+      .distinct('_id');
+
+    const counts = await this.alarmsEventModel.aggregate([
+      { $match: { _id: { $in: parentIds } } },
       {
         $project: {
-          'alarmAcknowledgedBy': {
-            _id: '$acknowledgedByUser._id',
-            name: '$acknowledgedByUser.name',
-            email: '$acknowledgedByUser.email'
+          count: {
+            $size: {
+              $filter: {
+                input: '$alarmOccurrences',
+                as: 'occId',
+                cond: { $in: ['$$occId', acknowledgedIds] },
+              },
+            },
           },
-          date: 1,
-          alarmID: 1,
-          alarmStatus: 1,
-          alarmConfigId: 1,
-          logicStatuses: 1,
-          alarmAcknowledgeStatus: 1,
-          alarmAcknowledgmentAction: 1,
-          alarmAcknowledgedDelay: 1,
-          alarmAge: 1,
-          alarmDuration: 1,
-          alarmSnooze: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          resolveTime: 1, // Include resolveTime in response
-        }
-      }
+        },
+      },
     ]);
 
-    // Update parent alarms
-    const parentAlarms = await this.alarmsEventModel.find({
-      alarmOccurrences: { $in: objectIds },
-    });
+    const countMap = new Map(
+      counts.map((c) => [c._id.toString(), c.count]),
+    );
 
-    for (const parentAlarm of parentAlarms) {
-      const acknowledgedCount = await this.alarmOccurrenceModel.countDocuments({
-        _id: { $in: parentAlarm.alarmOccurrences },
-        alarmAcknowledgeStatus: 'Acknowledged',
-      });
+    const parentBulkOps = parentAlarms.map((parentAlarm) => ({
+      updateOne: {
+        filter: { _id: parentAlarm._id },
+        update: {
+          $set: {
+            alarmAcknowledgementStatusCount:
+              countMap.get(parentAlarm._id.toString()) || 0,
+          },
+        },
+      },
+    }));
 
-      parentAlarm.alarmAcknowledgementStatusCount = acknowledgedCount;
-      await parentAlarm.save();
-    }
-
-    // Get parent alarms with populated occurrences
-    const populatedParentAlarms = await this.alarmsEventModel
-      .find({ alarmOccurrences: { $in: objectIds } })
-      .populate({
-        path: 'alarmOccurrences',
-        populate: {
-          path: 'alarmAcknowledgedBy',
-          select: 'name email'
-        }
-      })
-      .lean();
-
-    return {
-      updatedOccurrences: occurrences,
-      parentAlarms: populatedParentAlarms,
-    };
+    await this.alarmsEventModel.bulkWrite(parentBulkOps);
   }
+
+  // Get parent alarms with populated occurrences
+  const populatedParentAlarms = await this.alarmsEventModel
+    .find({ alarmOccurrences: { $in: objectIds } })
+    .populate({
+      path: 'alarmOccurrences',
+      populate: {
+        path: 'alarmAcknowledgedBy',
+        select: 'name email'
+      }
+    })
+    .lean();
+
+  return {
+    updatedOccurrences: occurrences,
+    parentAlarms: populatedParentAlarms,
+  };
+}
 
   /**
    * Snooze alarm occurrences
    * @param snoozeDto Snooze data transfer object
    * @returns Success message
    */
-  async snoozeAlarm(dto: SnoozeDto) {
-    const { ids, alarmSnooze, snoozeDuration, snoozeAt } = dto;
+ async snoozeAlarm(dto: SnoozeDto) {
+  const { ids, alarmSnooze, snoozeDuration, snoozeAt } = dto;
 
-    // Validate IDs
-    for (const id of ids) {
-      if (!Types.ObjectId.isValid(id)) {
-        throw new BadRequestException(`Invalid occurrence ID: ${id}`);
-      }
+  // Validate IDs
+  for (const id of ids) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException(`Invalid occurrence ID: ${id}`);
     }
+  }
 
-    const objectIds = ids.map((id) => new Types.ObjectId(id));
-    const snoozeTimestamp = new Date(snoozeAt);
+  const objectIds = ids.map((id) => new Types.ObjectId(id));
+  const snoozeTimestamp = new Date(snoozeAt);
 
-    if (Number.isNaN(snoozeTimestamp.getTime())) {
-      throw new BadRequestException('Invalid snoozeAt date');
-    }
+  if (Number.isNaN(snoozeTimestamp.getTime())) {
+    throw new BadRequestException('Invalid snoozeAt date');
+  }
 
-    const occurrences = await this.alarmOccurrenceModel.find({
-      _id: { $in: objectIds },
-    });
+  const occurrences = await this.alarmOccurrenceModel.find({
+    _id: { $in: objectIds },
+  });
 
-    if (!occurrences.length) {
-      throw new NotFoundException('No alarms found');
-    }
+  if (!occurrences.length) {
+    throw new NotFoundException('No alarms found');
+  }
 
-    for (const occurrence of occurrences) {
-      const durationInSeconds = this.calculateDuration(occurrence.date);
+  const bulkOps = occurrences.map((occurrence) => {
+    const durationInSeconds = this.calculateDuration(occurrence.date);
 
-      await this.alarmOccurrenceModel.updateOne(
-        { _id: occurrence._id },
-        {
+    return {
+      updateOne: {
+        filter: { _id: occurrence._id },
+        update: {
           $set: {
             alarmSnooze,
             snoozeDuration,
@@ -1671,13 +1726,18 @@ export class AlarmsService {
             alarmDuration: durationInSeconds,
           },
         },
-      );
-    }
-
-    return {
-      message: 'Alarm snoozed successfully',
+      },
     };
+  });
+
+  if (bulkOps.length) {
+    await this.alarmOccurrenceModel.bulkWrite(bulkOps);
   }
+
+  return {
+    message: 'Alarm snoozed successfully',
+  };
+}
 
   async getParamOptions(category?: string) {
     // Get single document
