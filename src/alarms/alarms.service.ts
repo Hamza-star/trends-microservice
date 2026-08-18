@@ -1549,7 +1549,7 @@ export class AlarmsService {
 
     // Get user details once
     const user = await this.userModel
-      .findById(acknowledgedBy)
+      .findById(acknowledgedBy) 
       .select('name email')
       .lean();
 
