@@ -69,6 +69,24 @@ export class MeterController {
     };
   }
 
+
+   /**
+   * Get all active meters (status: true only)
+   * GET /meters/active
+   */
+  @Get('active')
+  @ApiOperation({ summary: 'Get all active meters with status true' })
+  async findActive(): Promise<ApiResponse> {
+    const data = await this.meterService.findActive();
+    return {
+      success: true,
+      message: 'Active meters retrieved successfully',
+      data,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+
   @Get()
   @ApiOperation({
     summary: 'Get all meters',
@@ -99,6 +117,7 @@ export class MeterController {
       timestamp: new Date().toISOString(),
     };
   }
+
 
   @Get('area/:areaId')
   @ApiOperation({

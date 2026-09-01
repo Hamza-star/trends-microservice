@@ -107,6 +107,21 @@ export class MeterService {
   }
 
   /**
+   * Get all active meters (status: true only)
+   */
+  async findActive(): Promise<MeterResponse[]> {
+    const meters = await this.meterModel
+      .find({ status: true })  // Sirf status true wale
+      .populate('area', 'name path level')
+      .sort({ meterName: 1 })
+      .lean()
+      .exec();
+
+    return meters.map(meter => this.formatMeterResponse(meter));
+  }
+
+
+  /**
    * Get single meter by ID
    */
   async findOne(id: string): Promise<MeterResponse> {
