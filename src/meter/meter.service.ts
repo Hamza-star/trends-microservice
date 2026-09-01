@@ -122,6 +122,25 @@ export class MeterService {
 
 
   /**
+   * Get meters by array of keys
+   */
+  async findByKeys(keys: string[]): Promise<MeterResponse[]> {
+    if (!keys || keys.length === 0) {
+      return [];
+    }
+
+    const meters = await this.meterModel
+      .find({ key: { $in: keys } })  // key field ke base par filter
+      .populate('area', 'name path level')
+      .sort({ meterName: 1 })
+      .lean()
+      .exec();
+
+    return meters.map(meter => this.formatMeterResponse(meter));
+  }
+
+
+  /**
    * Get single meter by ID
    */
   async findOne(id: string): Promise<MeterResponse> {

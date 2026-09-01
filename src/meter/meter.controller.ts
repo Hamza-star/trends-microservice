@@ -85,6 +85,24 @@ export class MeterController {
       timestamp: new Date().toISOString(),
     };
   }
+ 
+  /**
+   * Get meters by keys (POST method)
+   * POST /meters/get-by-keys
+   */
+  @Post('get-by-keys')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get meters by keys array' })
+  // @ApiResponse({ status: 200, description: 'Returns meters matching the provided keys' })
+  async getMetersByKeys(@Body('keys') keys: string[]): Promise<ApiResponse> {
+    const data = await this.meterService.findByKeys(keys);
+    return {
+      success: true,
+      message: 'Meters retrieved successfully by keys',
+      data,
+      timestamp: new Date().toISOString(),
+    };
+  }
 
 
   @Get()
