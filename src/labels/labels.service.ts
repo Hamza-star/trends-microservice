@@ -291,4 +291,41 @@ export class LabelsService {
       message: `${result.deletedCount} label(s) deleted successfully`,
     };
   }
+
+
+  // labels.service.ts - In mein add karein
+
+// Get labels by keys (POST method)
+async getLabelsByKeys(keys: string[]): Promise<Label[]> {
+  if (!keys || keys.length === 0) {
+    return [];
+  }
+
+  const labels = await this.labelsCollection
+    .find({ key: { $in: keys } })
+    .toArray();
+
+  return labels;
+}
+
+// Get labels by ids (POST method)
+async getLabelsByIds(ids: string[]): Promise<Label[]> {
+  if (!ids || ids.length === 0) {
+    return [];
+  }
+
+  const objectIds = ids
+    .filter((id) => ObjectId.isValid(id))
+    .map((id) => new ObjectId(id));
+
+  if (objectIds.length === 0) {
+    return [];
+  }
+
+  const labels = await this.labelsCollection
+    .find({ _id: { $in: objectIds } })
+    .toArray();
+
+  return labels;
+}
 }

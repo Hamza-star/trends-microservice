@@ -35,6 +35,16 @@ import { ApiResponse, MeterResponse } from './interfaces/meter-response.interfac
 export class MeterController {
   constructor(private readonly meterService: MeterService) {}
 
+
+   /**
+   * Get all meter names only
+   * GET /meters/names
+   */
+  @Get('names')
+  async getAllMeterNames(): Promise<string[]> {
+    return this.meterService.getAllMeterNames();
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -290,4 +300,6 @@ export class MeterController {
       timestamp: new Date().toISOString(),
     };
   }
+
+ 
 }

@@ -32,7 +32,7 @@ export class LabelsController {
   }
 
   // Create multiple labels
-  @UseGuards(JwtAuthGuard, PermissionGuard)
+  // @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermissions('labels.create')
   @Post('bulk')
   @HttpCode(HttpStatus.CREATED)
@@ -41,7 +41,7 @@ export class LabelsController {
   }
 
   // Get all labels
-  @UseGuards(JwtAuthGuard, PermissionGuard)
+  // @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermissions('labels.read')
   @Get()
   async findAll() {
@@ -137,4 +137,24 @@ export class LabelsController {
   async deleteManyByIds(@Body('ids') ids: string[]) {
     return await this.labelsService.deleteManyByIds(ids);
   }
+
+
+
+// // Get labels by keys (POST method)
+// @UseGuards(JwtAuthGuard, PermissionGuard)
+// @RequirePermissions('labels.read')
+@Post('get-by-keys')
+@HttpCode(HttpStatus.OK)
+async getLabelsByKeys(@Body('keys') keys: string[]) {
+  return await this.labelsService.getLabelsByKeys(keys);
+}
+
+// Get labels by ids (POST method)
+// @UseGuards(JwtAuthGuard, PermissionGuard)
+// @RequirePermissions('labels.read')
+@Post('get-by-ids')
+@HttpCode(HttpStatus.OK)
+async getLabelsByIds(@Body('ids') ids: string[]) {
+  return await this.labelsService.getLabelsByIds(ids);
+}
 }

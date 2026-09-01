@@ -1,3 +1,4 @@
+// create-meter.dto.ts
 import { IsString, IsOptional, IsBoolean, IsMongoId, MinLength, IsNotEmpty } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -12,23 +13,23 @@ export class CreateMeterDto {
   @IsNotEmpty({ message: 'Meter name is required' })
   meterName!: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Unique key identifier for the meter',
     example: 'PG_PC_Z1_GW0_PLC1_EM01',
     uniqueItems: true
   })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty({ message: 'Unique key is required' })
-  uniqueKey!: string;
+  uniqueKey?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Area ID where meter belongs',
     example: '6a1d66106bccaa9d0cfad4f1',
     type: String
   })
+  @IsOptional()
   @IsMongoId({ message: 'Invalid area ID format' })
-  @IsNotEmpty({ message: 'Area ID is required' })
-  area!: string;
+  area?: string;
 
   @ApiPropertyOptional({
     description: 'Additional information about the meter',
@@ -46,4 +47,12 @@ export class CreateMeterDto {
   @IsOptional()
   @IsBoolean()
   status?: boolean;
+
+  @ApiProperty({
+    description: 'Key identifier for the meter',
+    example: 'KEY-001-2026'
+  })
+  @IsString()
+  @IsNotEmpty({ message: 'key is required' })
+  key!: string;
 }

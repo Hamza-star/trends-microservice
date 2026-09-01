@@ -32,4 +32,7 @@ export class MeterResponse {
 
   @ApiPropertyOptional({ description: 'Area details if populated' })
   areaDetails?: any;
+
+  @ApiPropertyOptional({ description: 'KEY-006-2026' })
+  key!: string;
 }

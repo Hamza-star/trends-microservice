@@ -1,3 +1,4 @@
+// meter.service.ts
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -15,29 +16,59 @@ export class MeterService {
   ) {}
 
   /**
-   * Create a new meter
+   * Create a new meter with conditional validation
    */
   async create(createMeterDto: CreateMeterDto): Promise<MeterResponse> {
     try {
-      const { meterName, uniqueKey, area, infoText, status } = createMeterDto;
+      const { meterName, uniqueKey, area, infoText, status, key } = createMeterDto;
 
-      // Validate uniqueKey uniqueness
-      await this.validateUniqueKey(uniqueKey);
+      // Validate key is always required
+      if (!key) {
+        throw new BadRequestException('key is required');
+      }
 
-      // Validate area exists
-      await this.validateAreaExists(area);
+      // Conditional validation based on status
+      if (status === true || status === undefined) {
+        // When status is true or not provided
+        if (!meterName) {
+          throw new BadRequestException('meterName is required when status is true');
+        }
+        if (!uniqueKey) {
+          throw new BadRequestException('uniqueKey is required when status is true');
+        }
+        if (!area) {
+          throw new BadRequestException('area is required when status is true');
+        }
+        
+        // Validate uniqueKey uniqueness
+        await this.validateUniqueKey(uniqueKey);
+        // Validate area exists
+        await this.validateAreaExists(area);
+        
+      } else if (status === false) {
+        // When status is false
+        if (!meterName) {
+          throw new BadRequestException('meterName is required when status is false');
+        }
+        if (!key) {
+          throw new BadRequestException('key is required when status is false');
+        }
+        // uniqueKey and area are NOT required when status is false
+        // infoText is optional when status is false
+      }
 
       // Create new meter
       const newMeter = new this.meterModel({
-        meterName,
-        uniqueKey,
-        area: new Types.ObjectId(area),
+        meterName: meterName || '',
+        uniqueKey: uniqueKey || '',
+        area: area ? new Types.ObjectId(area) : null,
         infoText: infoText || '',
         status: status !== undefined ? status : true,
+        key: key,
       });
 
       const savedMeter = await newMeter.save();
-      return await this.formatMeterResponse(savedMeter);
+      return this.formatMeterResponse(savedMeter);
     } catch (error) {
       this.handleError(error);
     }
@@ -126,7 +157,7 @@ export class MeterService {
   }
 
   /**
-   * Update meter
+   * Update meter with conditional validation
    */
   async update(id: string, updateMeterDto: UpdateMeterDto): Promise<MeterResponse> {
     try {
@@ -135,19 +166,55 @@ export class MeterService {
         throw new NotFoundException(`Meter with ID "${id}" not found`);
       }
 
-      // Validate uniqueKey if being updated
+      const { meterName, uniqueKey, area, infoText, status, key } = updateMeterDto;
+
+      // Determine the final status (use existing if not provided)
+      const finalStatus = status !== undefined ? status : meter.status;
+
+      // Conditional validation based on final status
+      if (finalStatus === true) {
+        // When status is true
+        if (meterName !== undefined && !meterName) {
+          throw new BadRequestException('meterName cannot be empty when status is true');
+        }
+        if (uniqueKey !== undefined && !uniqueKey) {
+          throw new BadRequestException('uniqueKey cannot be empty when status is true');
+        }
+        if (area !== undefined && !area) {
+          throw new BadRequestException('area cannot be empty when status is true');
+        }
+        // key is optional in update when status is true
+      } else if (finalStatus === false) {
+        // When status is false
+        if (meterName !== undefined && !meterName) {
+          throw new BadRequestException('meterName cannot be empty when status is false');
+        }
+        if (key !== undefined && !key) {
+          throw new BadRequestException('key cannot be empty when status is false');
+        }
+        // uniqueKey and area are NOT required when status is false
+        // infoText is optional when status is false
+      }
+
+      // Validate uniqueKey if being updated and not empty
       if (updateMeterDto.uniqueKey && updateMeterDto.uniqueKey !== meter.uniqueKey) {
         await this.validateUniqueKey(updateMeterDto.uniqueKey, id);
       }
 
-      // Validate area if being updated
-      if (updateMeterDto.area && updateMeterDto.area !== meter.area.toString()) {
+      // Validate area if being updated and not empty
+      if (updateMeterDto.area && updateMeterDto.area !== meter.area?.toString()) {
         await this.validateAreaExists(updateMeterDto.area);
         updateMeterDto.area = new Types.ObjectId(updateMeterDto.area) as any;
       }
 
-      // Apply updates
-      Object.assign(meter, updateMeterDto);
+      // Apply updates (only update fields that are provided)
+      if (meterName !== undefined) meter.meterName = meterName;
+      if (uniqueKey !== undefined) meter.uniqueKey = uniqueKey;
+      if (area !== undefined) meter.area = area ? new Types.ObjectId(area) : null;
+      if (infoText !== undefined) meter.infoText = infoText;
+      if (status !== undefined) meter.status = status;
+      if (key !== undefined) meter.key = key;
+
       meter.updatedAt = new Date();
       await meter.save();
 
@@ -175,6 +242,21 @@ export class MeterService {
 
     const result = await this.meterModel.findByIdAndDelete(id);
     return { deletedCount: result ? 1 : 0 };
+  }
+
+
+   /**
+   * Get all meter names only
+   */
+  async getAllMeterNames(): Promise<string[]> {
+    const meters = await this.meterModel
+      .find()
+      .select('meterName') // Sirf meterName field select karein
+      .sort({ meterName: 1 }) // Alphabetical order mein
+      .lean()
+      .exec();
+
+    return meters.map(meter => meter.meterName);
   }
 
   /**
@@ -255,6 +337,8 @@ export class MeterService {
    * Validate uniqueKey uniqueness
    */
   private async validateUniqueKey(uniqueKey: string, excludeId?: string): Promise<void> {
+    if (!uniqueKey) return; // Skip if empty
+    
     const query: any = { uniqueKey };
     if (excludeId) {
       query._id = { $ne: new Types.ObjectId(excludeId) };
@@ -270,6 +354,8 @@ export class MeterService {
    * Validate area exists
    */
   private async validateAreaExists(areaId: string): Promise<void> {
+    if (!areaId) return; // Skip if empty
+    
     const exists = await this.areaModel.exists({ _id: areaId });
     if (!exists) {
       throw new NotFoundException(`Area with ID "${areaId}" not found`);
@@ -283,10 +369,11 @@ export class MeterService {
     return {
       id: meter._id.toString(),
       meterName: meter.meterName,
-      uniqueKey: meter.uniqueKey,
+      uniqueKey: meter.uniqueKey || '',
       area: meter.area?._id?.toString() || meter.area?.toString() || meter.area,
       infoText: meter.infoText || '',
       status: meter.status,
+      key: meter.key,
       createdAt: meter.createdAt || new Date(),
       updatedAt: meter.updatedAt || new Date(),
       areaDetails: meter.area ? {
@@ -297,6 +384,9 @@ export class MeterService {
       } : undefined,
     };
   }
+
+
+
 
   /**
    * Handle errors

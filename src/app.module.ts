@@ -13,6 +13,7 @@ import { LabelsModule } from './labels/labels.module';
 import { AlarmsModule } from './alarms/alarms.module';
 import { AreasModule } from './areas/areas.module';
 import { MeterModule } from './meter/meter.module';
+import { TrendsModule } from './trends/trends.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { MeterModule } from './meter/meter.module';
     AlarmsModule,
     AreasModule,
     MeterModule,
+    TrendsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
