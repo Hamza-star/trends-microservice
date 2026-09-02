@@ -52,6 +52,11 @@ export class AlarmsController {
   async getParamOptions() {
     return this.alarmsService.getParamOptions();
   }
+ @Get('unique-keys')
+@ApiOperation({ summary: 'Get available parameter options' })
+async getParam() {
+  return this.alarmsService.getParam();
+}
 
   // ─── Alarm Types ─────────────────────────────────────────────────────────────
 

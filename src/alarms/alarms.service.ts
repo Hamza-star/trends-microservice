@@ -1760,4 +1760,56 @@ async acknowledgeMany(occurrenceIds: string[], acknowledgedBy: string) {
     // Return all categories with options
     return allOptions;
   }
+
+
+  // async getParam(category?: string) {
+  //   // Get single document
+  //   const doc = await this.connection
+  //     .collection('unique-ky')
+  //     .findOne({});
+
+  //   if (!doc) {
+  //     return [];
+  //   }
+
+  //   const allOptions = doc.paramOptions || [];
+
+  //   // If category provided, filter
+  //   if (category) {
+  //     const filtered = allOptions.find(item => item.category === category);
+  //     return filtered?.options || [];
+  //   }
+
+  //   // Return all categories with options
+  //   return allOptions;
+  // }
+
+
+  async getParam() {
+  try {
+    // Bas pehla document fetch karo
+    const doc = await this.connection
+      .collection('unique-keys')
+      .findOne({});
+
+    if (!doc) {
+      return { message: 'No document found', data: {} };
+    }
+
+    // _id hatado aur baaki saara data return karo
+    const { _id, ...data } = doc;
+    
+    return {
+      success: true,
+      data: data
+    };
+  } catch (error) {
+    console.error('Error:', error);
+    return {
+      success: false,
+      error: error.message,
+      data: {}
+    };
+  }
+}
 }
