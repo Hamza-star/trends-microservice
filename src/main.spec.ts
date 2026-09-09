@@ -9,6 +9,9 @@ describe('bootstrap', () => {
     const app = {
       useGlobalPipes: jest.fn(),
       useGlobalFilters: jest.fn(),
+      get: jest.fn().mockReturnValue({
+        getOrThrow: jest.fn().mockReturnValue(['http://localhost:3000']),
+      }),
       listen: jest.fn().mockResolvedValue(undefined),
     } as any;
 

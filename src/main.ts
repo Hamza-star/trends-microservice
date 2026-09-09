@@ -4,6 +4,11 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 
+const FRONTEND_ORIGINS = [
+  'http://localhost:3000',
+  'https://generic-ems.vercel.app',
+];
+
 export async function bootstrap() {
   try {
     const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -18,10 +23,8 @@ export async function bootstrap() {
       }),
     );
 
-
-
     app.enableCors({
-      origin: ['http://localhost:3000', 'https://generic-ems.vercel.app'], // Add origin
+      origin: FRONTEND_ORIGINS,
       credentials: true,
     });
 

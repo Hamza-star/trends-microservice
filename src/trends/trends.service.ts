@@ -1,4 +1,4 @@
-import { HttpException, Injectable } from '@nestjs/common';
+import { BadRequestException, HttpException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
@@ -15,10 +15,12 @@ export class TrendsService {
     async getTrendsByMeters(
         startDate: string,
         endDate: string,
+        startTime: string,
+        endTime: string,
         meterIds: string[],
         suffixes: string[],
         userTimezone: string,
-        project: string,
+        projectId: string,
         useSixThirtyWindow = true, //FALSE IF GET DATA IN UTC MIDNIGHT TO MIDNIGHT
     ): Promise<any> {
         // Validation
@@ -26,26 +28,30 @@ export class TrendsService {
             throw new HttpException('meterIds and suffixes are required', 400);
         }
 
-        const { projectCollections } = this.configService.getOrThrow<TrendsConfig>('trends');
-        const collections = projectCollections[project] ?? [];
+        const { projects } = this.configService.getOrThrow<TrendsConfig>('trends');
+        const projectConfig = projects[projectId];
 
-        if (!collections.length) {
-            throw new HttpException('No zones configured', 500);
+        if (!projectConfig) {
+            throw new BadRequestException('Unknown projectId');
         }
 
+        const database = this.connection.useDb(projectConfig.dbName, { useCache: true });
+
         // Run queries in parallel for all zones
-        const zonePromises = collections.map(async (zone) => {
+        const zonePromises = projectConfig.collections.map(async (zone) => {
             const pipeline = buildtrendsAggregationPipeline(
                 meterIds,
                 suffixes,
                 startDate,
                 endDate,
+                startTime,
+                endTime,
                 zone,
                 userTimezone,
                 useSixThirtyWindow,
             );
 
-            return this.connection
+            return database
                 .collection(zone)
                 .aggregate(pipeline, { allowDiskUse: true })
                 .toArray();

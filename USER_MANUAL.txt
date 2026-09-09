@@ -1,86 +1,52 @@
-User Management (NestJS) — User Manual
+Trends Service User Manual
 
 Overview
-- Purpose: A modular NestJS microservice that manages users, roles, privileges, menus and authentication.
-- Key technologies: NestJS, Mongoose, Passport (JWT), bcrypt, TypeScript.
+- Standalone NestJS microservice for Trends MongoDB aggregation.
+- Frontends call `POST /trends` directly.
+- User JWT and service-to-service authentication are not implemented in this step.
 
-Repository layout (important files)
-- App entry: [src/main.ts](src/main.ts#L1)
-- Module wiring: [src/app.module.ts](src/app.module.ts#L1)
-- Auth: [src/auth](src/auth) — `auth.module.ts`, `jwt.strategy.ts`, `jwt.authguard.ts`, `authorization.policy.ts`
-- Users: [src/users](src/users) — controller, service, and schema (includes `createdBy` tracking)
-- Roles: [src/roles](src/roles) — controller, service, schema (includes `isSystem` flag)
-- Permissions: [src/auth/permissions.constants.ts](src/auth/permissions.constants.ts#L1)
+Request flow
+Frontend -> POST /trends with projectId -> Trends Service -> server-side project configuration -> MongoDB -> response.
 
-Authentication & Authorization
-- JWT auth: tokens are validated by `JwtStrategy` (payload must include `sub`, `email`, `role`).
-- Guards: `JwtAuthGuard` protects routes; `PermissionGuard` enforces required permissions via the `@RequirePermissions` decorator.
-- Central policy: `AuthorizationPolicy` contains checks used across services:
-  - `assertHasPermissions()` - verifies role has required permissions
-  - `assertCanAssignRolePermissions()` - ensures actor can assign permissions they possess (unless actor is SUPER_ADMIN)
-  - `assertRoleModifiable()` - enforces restrictions when modifying roles (see SUPER_ADMIN rules below)
+The client provides only the project identifier and Trends query fields. It cannot select a database or collections.
 
-SUPER_ADMIN and system role protections
-- The `SUPER_ADMIN` role is reserved and case-insensitive. It cannot be created or renamed to `SUPER_ADMIN` by non-super-admins.
-- Only a user whose role is `SUPER_ADMIN` may:
-  - modify a role whose name is `SUPER_ADMIN`
-  - assign the `SUPER_ADMIN` role to another user
-  - modify roles that are flagged with `isSystem: true`
-- These protections live in `AuthorizationPolicy` and are enforced in the roles and users services. Attempting to bypass returns a `BadRequestException`.
+Environment
+- `MONGO_URI` - MongoDB connection URI (required).
 
-User/Role visibility rules
-- Users created by an admin are tracked using the `createdBy` ObjectId on the `Users` schema.
-- `findAll()` for users excludes the requesting user and restricts non-super-admins to seeing only users they created.
-- `getAllRoles()` returns all roles to `SUPER_ADMIN`; non-super-admins only see roles they created.
+Project configuration
 
-Mongoose notes & deprecations
-- Use `returnDocument: 'after'` instead of `{ new: true }` for `findByIdAndUpdate` and `findOneAndUpdate` (repository updated accordingly).
+Project mappings are defined in `src/config/trends-projects.constants.ts`.
 
-How to run
-- Install dependencies:
+Each entry has a `projectId`, `dbName`, and `collections` array.
+
+To add a project, add an entry to the constants file. To add a collection, append it to the project's `collections` array. To change a project's database, edit only its `dbName`. CORS origins are declared in `src/main.ts`.
+
+Example request
+
+```json
+{
+  "projectId": "ems",
+  "start_date": "2026-06-01",
+  "end_date": "2026-06-01",
+  "start_time": "00:00:00",
+  "end_time": "23:59:59",
+  "meterIds": ["PG_PC_Z4_GW0_PLC2_EM11"],
+  "suffixes": ["AMP_AVG", "CURR_L2"],
+  "userTimezone": "Asia/Karachi"
+}
 ```
+
+`POST /trends` returns the existing `{ timezone, data }` response structure. `projectId`, dates, times, meter IDs, and suffixes are required. Times use `HH:mm:ss`. `userTimezone` is optional and defaults to `Asia/Karachi`.
+
+MongoDB behavior
+
+NestJS `MongooseModule.forRootAsync()` owns the single MongoDB connection. The service selects a configured project database using Mongoose's cached `useDb` mechanism and queries only that project's configured collections. It does not create a connection per request.
+
+Development
+
+```text
 npm install
-```
-- Start dev server:
-```
 npm run start:dev
-```
-- Build:
-```
 npm run build
-```
-- Tests:
-```
 npm test
 ```
-
-Environment variables
-- `MONGO_URI` — MongoDB connection string (required)
-- `MONGO_DB_NAME` — MongoDB database name (required)
-- `TRENDS_COLLECTIONS` — Comma-separated Trends collection names (required)
-- `JWT_SECRET` — secret used to sign JWTs (default `dev-jwt-secret` if unset)
-
-Common requests and troubleshooting
-- "Auth guard failing" stacktrace from `@nestjs/passport` usually means the JWT is missing, expired, or the `JWT_SECRET` is wrong. Check Authorization header `Bearer <token>` and confirm `JWT_SECRET`.
-- If you see Mongoose warnings about `new: true` — update code to `returnDocument: 'after'` (already applied in this repo).
-- When a role or user update silently succeeds but should be blocked, verify the requesting user's role in the JWT payload and that the `AuthorizationPolicy` checks are present in the service method.
-
-Adding a permission or role
-1. Add a new entry to `src/auth/permissions.constants.ts`.
-2. Use the constant value in controllers via `@RequirePermissions('your.permission')`.
-3. Ensure any role creation or permission assignment flows call `authorizationPolicy.assertCanAssignRolePermissions()` so actors can't assign permissions they do not possess.
-
-Developer notes
-- Circular module dependencies are resolved using `forwardRef()` where modules import each other (e.g., `UsersModule` and `RolesModule`).
-- Schema fields of note: `Roles.isSystem` (boolean), `Roles.createdBy`, `Users.createdBy`.
-- Tests: unit tests live alongside controllers/services as `*.spec.ts` files. Use `npm test` to run.
-
-Contact
-- For architectural questions or to propose policy changes, open an issue in the repository or contact the maintainer.
-
-Change log (quick)
-- SUPER_ADMIN protections added to `AuthorizationPolicy`.
-- User creation/update checks prevent non-super-admins from assigning `SUPER_ADMIN`.
-- Mongoose `new: true` usages converted to `returnDocument: 'after'`.
-
-End of manual
