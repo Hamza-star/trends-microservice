@@ -55,7 +55,9 @@ npm test
 ```
 
 Environment variables
-- `MONGODB_URI` — MongoDB connection string (defaults to mongodb://127.0.0.1:27017/user-management-nestjs)
+- `MONGO_URI` — MongoDB connection string (required)
+- `MONGO_DB_NAME` — MongoDB database name (required)
+- `TRENDS_COLLECTIONS` — Comma-separated Trends collection names (required)
 - `JWT_SECRET` — secret used to sign JWTs (default `dev-jwt-secret` if unset)
 
 Common requests and troubleshooting

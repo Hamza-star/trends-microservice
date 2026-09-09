@@ -1,4 +1,6 @@
-import { Body, Controller, HttpException, Post, Req } from '@nestjs/common';
+import { Body, Controller, HttpException, Post, Req, UseGuards } from '@nestjs/common';
+import { ServiceAuthGuard } from '../auth/auth.guard';
+import type { ServiceRequest } from '../auth/auth.guard';
 import { TrendsService } from './trends.service';
 
 @Controller('trends')
@@ -7,6 +9,7 @@ export class TrendsController {
     constructor(private readonly trendsService: TrendsService) {}
 
     @Post()
+    @UseGuards(ServiceAuthGuard)
     async getTrends(
         @Body()
         body: {
@@ -16,7 +19,7 @@ export class TrendsController {
             suffixes: string[];
             userTimezone?: string;
         },
-        @Req() req: any,
+        @Req() req: ServiceRequest,
     ) {
         const { start_date, end_date, meterIds, suffixes, userTimezone } = body;
 
@@ -51,6 +54,7 @@ export class TrendsController {
             meterIds,
             suffixes,
             effectiveTimezone,
+            req.service!.project,
         );
     }
 }

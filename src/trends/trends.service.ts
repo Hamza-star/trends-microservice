@@ -1,13 +1,15 @@
 import { HttpException, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
-import { COLLECTIONS } from './trends-constants/collections';
+import { TrendsConfig } from '../config/trends.config';
 import { buildtrendsAggregationPipeline } from './trends-constants/trends-aggregation';
 
 @Injectable()
 export class TrendsService {
     constructor(
         @InjectConnection() private readonly connection: Connection,
+        private readonly configService: ConfigService,
     ) {}
 
     async getTrendsByMeters(
@@ -16,6 +18,7 @@ export class TrendsService {
         meterIds: string[],
         suffixes: string[],
         userTimezone: string,
+        project: string,
         useSixThirtyWindow = true, //FALSE IF GET DATA IN UTC MIDNIGHT TO MIDNIGHT
     ): Promise<any> {
         // Validation
@@ -23,12 +26,15 @@ export class TrendsService {
             throw new HttpException('meterIds and suffixes are required', 400);
         }
 
-        if (!COLLECTIONS?.length) {
+        const { projectCollections } = this.configService.getOrThrow<TrendsConfig>('trends');
+        const collections = projectCollections[project] ?? [];
+
+        if (!collections.length) {
             throw new HttpException('No zones configured', 500);
         }
 
         // Run queries in parallel for all zones
-        const zonePromises = COLLECTIONS.map(async (zone) => {
+        const zonePromises = collections.map(async (zone) => {
             const pipeline = buildtrendsAggregationPipeline(
                 meterIds,
                 suffixes,
