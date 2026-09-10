@@ -57,6 +57,11 @@ export class ProjectConfigService {
     return resolved;
   }
 
+  async getProjectDatabase(projectId: string): Promise<Connection> {
+    const project = await this.getProjectConfig(projectId);
+    return this.connection.useDb(project.databaseName, { useCache: true });
+  }
+
   invalidate(projectId: string): void {
     this.cache.invalidate(projectId);
   }

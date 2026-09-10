@@ -6,6 +6,7 @@ import { CollectionController } from './collection.controller';
 import { ConfigurationService } from './configuration.service';
 import { ProjectController } from './project.controller';
 import { ProjectConfigService } from './project-config.service';
+import { ProjectModelsService } from './project-models.service';
 
 @Module({
   imports: [ConfigModule],
@@ -15,7 +16,8 @@ import { ProjectConfigService } from './project-config.service';
     ConfigCacheService,
     ConfigurationService,
     ProjectConfigService,
+    ProjectModelsService,
   ],
-  exports: [ProjectConfigService],
+  exports: [ProjectConfigService, ProjectModelsService],
 })
 export class ConfigurationModule {}

@@ -7,6 +7,8 @@ import { ConfigurationModule } from './configuration/configuration.module';
 import configurationConfig from './config/configuration.config';
 import trendsConfig from './config/trends.config';
 import { TrendsModule } from './trends/trends.module';
+import { MeterModule } from './meter/meter.module';
+import { AreasModule } from './areas/areas.module';
 
 @Module({
   imports: [
@@ -52,6 +54,8 @@ import { TrendsModule } from './trends/trends.module';
     }),
     
     TrendsModule,
+    MeterModule,
+    AreasModule,
   ],
   controllers: [AppController],
   providers: [AppService],

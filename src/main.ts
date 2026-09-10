@@ -6,6 +6,7 @@ import { AppModule } from './app.module';
 
 const FRONTEND_ORIGINS = [
   'http://localhost:3000',
+  'http://localhost:3001',
   'https://generic-ems.vercel.app',
 ];
 
