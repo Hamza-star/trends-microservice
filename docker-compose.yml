@@ -1,0 +1,15 @@
+services:
+  trends:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: trends-service
+
+    ports:
+      - "5000:5000"
+
+    env_file:
+      - .env
+
+    restart: unless-stopped
