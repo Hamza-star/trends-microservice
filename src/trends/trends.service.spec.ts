@@ -1,13 +1,14 @@
+import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { getConnectionToken } from '@nestjs/mongoose';
 import { TrendsService } from './trends.service';
+import { ProjectConfigService } from '../configuration/project-config.service';
 
 describe('TrendsService', () => {
   let service: TrendsService;
   let database: { collection: jest.Mock };
   let connection: { useDb: jest.Mock };
-  let configService: { getOrThrow: jest.Mock };
+  let projectConfigService: { getProjectConfig: jest.Mock };
 
   beforeEach(async () => {
     database = {
@@ -18,16 +19,11 @@ describe('TrendsService', () => {
     connection = {
       useDb: jest.fn().mockReturnValue(database),
     };
-    configService = {
-      getOrThrow: jest.fn().mockReturnValue({
-        projectCollections: {
-          'project-a': ['zone_1'],
-          'project-b': ['zone_2', 'zone_3'],
-        },
-        projects: {
-          ems: { dbName: 'ems_db', collections: ['zone_1'] },
-          solar: { dbName: 'solar_db', collections: ['zone_2', 'zone_3'] },
-        },
+    projectConfigService = {
+      getProjectConfig: jest.fn().mockResolvedValue({
+        projectId: 'solar',
+        databaseName: 'solar_db',
+        collections: ['zone_2', 'zone_3'],
       }),
     };
 
@@ -35,7 +31,7 @@ describe('TrendsService', () => {
       providers: [
         TrendsService,
         { provide: getConnectionToken(), useValue: connection },
-        { provide: ConfigService, useValue: configService },
+        { provide: ProjectConfigService, useValue: projectConfigService },
       ],
     }).compile();
 
@@ -46,7 +42,7 @@ describe('TrendsService', () => {
     expect(service).toBeDefined();
   });
 
-  it('queries only the collections configured for the authenticated project', async () => {
+  it('queries only the collections configured for the resolved project', async () => {
     await service.getTrendsByMeters(
       '2026-01-01',
       '2026-01-02',
@@ -65,6 +61,8 @@ describe('TrendsService', () => {
   });
 
   it('rejects an unknown projectId', async () => {
+    projectConfigService.getProjectConfig.mockRejectedValue(new NotFoundException('Project not found'));
+
     await expect(
       service.getTrendsByMeters(
         '2026-01-01',
@@ -76,6 +74,6 @@ describe('TrendsService', () => {
         'UTC',
         'unknown',
       ),
-    ).rejects.toThrow('Unknown projectId');
+    ).rejects.toThrow(NotFoundException);
   });
 });

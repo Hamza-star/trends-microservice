@@ -6,20 +6,45 @@ Overview
 - User JWT and service-to-service authentication are not implemented in this step.
 
 Request flow
-Frontend -> POST /trends with projectId -> Trends Service -> server-side project configuration -> MongoDB -> response.
+Frontend -> POST /trends with projectId -> ProjectConfigService -> memory cache -> configuration DB on miss -> project MongoDB -> response.
 
 The client provides only the project identifier and Trends query fields. It cannot select a database or collections.
 
 Environment
 - `MONGO_URI` - MongoDB connection URI (required).
+- `CONFIG_DB_NAME` - configuration database name (required).
+- `CONFIG_ADMIN_TOKEN` - admin token for project/collection CRUD (required).
 
-Project configuration
+Configuration CRUD
 
-Project mappings are defined in `src/config/trends-projects.constants.ts`.
+All configuration endpoints require `Authorization: Bearer <CONFIG_ADMIN_TOKEN>`.
 
-Each entry has a `projectId`, `dbName`, and `collections` array.
+Projects:
+- `POST /projects`
+- `GET /projects`
+- `GET /projects/:projectId`
+- `PATCH /projects/:projectId`
+- `DELETE /projects/:projectId` (soft delete)
 
-To add a project, add an entry to the constants file. To add a collection, append it to the project's `collections` array. To change a project's database, edit only its `dbName`. CORS origins are declared in `src/main.ts`.
+Collections:
+- `POST /projects/:projectId/collections`
+- `GET /projects/:projectId/collections`
+- `PATCH /projects/:projectId/collections/:collectionId`
+- `DELETE /projects/:projectId/collections/:collectionId` (soft delete)
+
+Project creation body:
+
+```json
+{"projectId":"ems","name":"EMS","databaseName":"ems_db","isActive":true}
+```
+
+Collection creation body:
+
+```json
+{"collectionName":"historical_z1","isActive":true}
+```
+
+Projects and collections are stored in the configuration DB. The Trends service caches resolved projects in memory for 60 seconds. Mutations invalidate the affected project cache. Adding or changing configuration does not require a TypeScript change.
 
 Example request
 

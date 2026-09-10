@@ -1,15 +1,14 @@
-import { BadRequestException, HttpException, Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { HttpException, Injectable } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
-import { TrendsConfig } from '../config/trends.config';
+import { ProjectConfigService } from '../configuration/project-config.service';
 import { buildtrendsAggregationPipeline } from './trends-constants/trends-aggregation';
 
 @Injectable()
 export class TrendsService {
     constructor(
         @InjectConnection() private readonly connection: Connection,
-        private readonly configService: ConfigService,
+        private readonly projectConfigService: ProjectConfigService,
     ) {}
 
     async getTrendsByMeters(
@@ -28,14 +27,9 @@ export class TrendsService {
             throw new HttpException('meterIds and suffixes are required', 400);
         }
 
-        const { projects } = this.configService.getOrThrow<TrendsConfig>('trends');
-        const projectConfig = projects[projectId];
+        const projectConfig = await this.projectConfigService.getProjectConfig(projectId);
 
-        if (!projectConfig) {
-            throw new BadRequestException('Unknown projectId');
-        }
-
-        const database = this.connection.useDb(projectConfig.dbName, { useCache: true });
+        const database = this.connection.useDb(projectConfig.databaseName, { useCache: true });
 
         // Run queries in parallel for all zones
         const zonePromises = projectConfig.collections.map(async (zone) => {

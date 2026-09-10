@@ -3,6 +3,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { ConfigurationModule } from './configuration/configuration.module';
+import configurationConfig from './config/configuration.config';
 import trendsConfig from './config/trends.config';
 import { TrendsModule } from './trends/trends.module';
 
@@ -11,9 +13,9 @@ import { TrendsModule } from './trends/trends.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
-      load: [trendsConfig],
+      load: [configurationConfig, trendsConfig],
       validate: (config) => {
-        const requiredVariables = ['MONGO_URI'];
+        const requiredVariables = ['MONGO_URI', 'CONFIG_DB_NAME', 'CONFIG_ADMIN_TOKEN'];
         const missingVariables = requiredVariables.filter(
           (variable) => !config[variable]?.trim(),
         );
@@ -25,6 +27,7 @@ import { TrendsModule } from './trends/trends.module';
         return config;
       },
     }),
+    ConfigurationModule,
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

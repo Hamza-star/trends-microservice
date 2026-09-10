@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { getConnectionToken } from '@nestjs/mongoose';
+import { ProjectConfigService } from '../configuration/project-config.service';
 import { TrendsController } from './trends.controller';
 import { TrendsService } from './trends.service';
 
@@ -13,7 +13,7 @@ describe('TrendsController', () => {
       providers: [
         TrendsService,
         { provide: getConnectionToken(), useValue: {} },
-        { provide: ConfigService, useValue: { getOrThrow: jest.fn() } },
+        { provide: ProjectConfigService, useValue: { getProjectConfig: jest.fn() } },
       ],
     }).compile();
 
