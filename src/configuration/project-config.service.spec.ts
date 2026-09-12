@@ -9,6 +9,7 @@ describe('ProjectConfigService', () => {
         lean: () => ({ exec: jest.fn().mockResolvedValue({
           projectId: 'ems',
           databaseName: 'ems_db',
+          nodeRedUrls: ['http://localhost:1880'],
           isActive: true,
         }) }),
       }),
@@ -45,6 +46,7 @@ describe('ProjectConfigService', () => {
     await expect(service.getProjectConfig('ems')).resolves.toEqual({
       projectId: 'ems',
       databaseName: 'ems_db',
+      nodeRedUrls: ['http://localhost:1880'],
       collections: ['zone_1', 'zone_2'],
     });
     expect(cache.set).toHaveBeenCalled();

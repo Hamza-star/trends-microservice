@@ -1,4 +1,4 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class UpdateProjectDto {
   @IsOptional()
@@ -10,6 +10,11 @@ export class UpdateProjectDto {
   @IsString()
   @IsNotEmpty()
   databaseName?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  nodeRedUrls?: string[];
 
   @IsOptional()
   @IsBoolean()

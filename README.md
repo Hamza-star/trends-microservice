@@ -54,7 +54,13 @@ DELETE /projects/:projectId/collections/:collectionId  (soft delete)
 Example project creation:
 
 ```json
-{ "projectId": "ems", "name": "EMS", "databaseName": "ems_db", "isActive": true }
+{
+  "projectId": "ems",
+  "name": "EMS",
+  "databaseName": "ems_db",
+  "nodeRedUrls": ["http://localhost:1880"],
+  "isActive": true
+}
 ```
 
 Example collection creation:

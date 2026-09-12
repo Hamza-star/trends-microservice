@@ -35,7 +35,7 @@ Collections:
 Project creation body:
 
 ```json
-{"projectId":"ems","name":"EMS","databaseName":"ems_db","isActive":true}
+{"projectId":"ems","name":"EMS","databaseName":"ems_db","nodeRedUrls":["http://localhost:1880"],"isActive":true}
 ```
 
 Collection creation body:

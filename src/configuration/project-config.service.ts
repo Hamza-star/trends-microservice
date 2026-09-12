@@ -9,6 +9,7 @@ import { ProjectCollection, ProjectCollectionSchema } from './schemas/collection
 export interface ProjectConfig {
   projectId: string;
   databaseName: string;
+  nodeRedUrls: string[];
   collections: string[];
 }
 
@@ -51,6 +52,7 @@ export class ProjectConfigService {
     const resolved: ProjectConfig = {
       projectId: project.projectId,
       databaseName: project.databaseName,
+      nodeRedUrls: project.nodeRedUrls ?? [],
       collections: collections.map(({ collectionName }) => collectionName),
     };
     this.cache.set(projectId, resolved);

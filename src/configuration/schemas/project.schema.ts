@@ -14,6 +14,9 @@ export class Project {
   @Prop({ required: true, trim: true })
   databaseName: string;
 
+  @Prop({ type: [String], default: [] })
+  nodeRedUrls: string[];
+
   @Prop({ required: true, default: true })
   isActive: boolean;
 }
