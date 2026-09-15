@@ -3,12 +3,14 @@ import { InjectConnection } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
 import { ProjectConfigService } from '../configuration/project-config.service';
 import { buildtrendsAggregationPipeline } from './trends-constants/trends-aggregation';
+import { TrendsCacheService } from './trends-cache.service';
 
 @Injectable()
 export class TrendsService {
     constructor(
         @InjectConnection() private readonly connection: Connection,
         private readonly projectConfigService: ProjectConfigService,
+        private readonly trendsCacheService: TrendsCacheService,
     ) {}
 
     async getTrendsByMeters(
@@ -25,6 +27,23 @@ export class TrendsService {
         // Validation
         if (!meterIds?.length || !suffixes?.length) {
             throw new HttpException('meterIds and suffixes are required', 400);
+        }
+
+        const cacheKey = this.trendsCacheService.createKey({
+            projectId,
+            startDate,
+            endDate,
+            startTime,
+            endTime,
+            meterIds,
+            suffixes,
+            userTimezone,
+            useSixThirtyWindow,
+        });
+        const cachedResult = this.trendsCacheService.get(cacheKey);
+
+        if (cachedResult) {
+            return cachedResult;
         }
 
         const projectConfig = await this.projectConfigService.getProjectConfig(projectId);
@@ -79,9 +98,12 @@ export class TrendsService {
         const results = Array.from(mergedMap.values())
             .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
-        return {
+        const result = {
             timezone: userTimezone,
             data: results,
         };
+
+        this.trendsCacheService.set(cacheKey, result);
+        return result;
     }
 }
