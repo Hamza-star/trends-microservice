@@ -1,7 +1,7 @@
 import { buildtrendsAggregationPipeline } from './trends-aggregation';
 
 describe('buildtrendsAggregationPipeline', () => {
-  it('normalizes BSON dates and ISO timestamp strings before matching', () => {
+  it('normalizes top-level timestamps and metrics before matching', () => {
     const pipeline = buildtrendsAggregationPipeline(
       ['meter-1'],
       ['AMP_AVG'],
@@ -13,16 +13,12 @@ describe('buildtrendsAggregationPipeline', () => {
       'Asia/Karachi',
     );
 
-    expect(pipeline[0]).toEqual({
-      $set: {
-        normalizedTimestamp: {
-          $convert: {
-            input: '$timestamp',
-            to: 'date',
-            onError: null,
-            onNull: null,
-          },
-        },
+    expect(pipeline[0].$set.normalizedTimestamp).toEqual({
+      $convert: {
+        input: { $ifNull: ['$timestamp', '$payload.Time'] },
+        to: 'date',
+        onError: null,
+        onNull: null,
       },
     });
     expect(pipeline[1]).toEqual({
@@ -32,6 +28,29 @@ describe('buildtrendsAggregationPipeline', () => {
     });
     expect(pipeline[2].$project.timestamp).toEqual({
       $dateToString: expect.objectContaining({ date: '$normalizedTimestamp' }),
+    });
+    expect(pipeline[2].$project['meter-1_AMP_AVG']).toEqual({
+      $ifNull: ['$meter-1_AMP_AVG', '$payload.meter-1_AMP_AVG'],
+    });
+  });
+
+  it('supports payload.Time and payload-nested metric fields', () => {
+    const pipeline = buildtrendsAggregationPipeline(
+      ['BL'],
+      ['Setting_HMI'],
+      '2025-09-29',
+      '2025-09-29',
+      '00:00:00',
+      '23:59:59',
+      'zone_1',
+      'Asia/Karachi',
+    );
+
+    expect(pipeline[0].$set.normalizedTimestamp.$convert.input).toEqual({
+      $ifNull: ['$timestamp', '$payload.Time'],
+    });
+    expect(pipeline[2].$project['BL_Setting_HMI']).toEqual({
+      $ifNull: ['$BL_Setting_HMI', '$payload.BL_Setting_HMI'],
     });
   });
 });

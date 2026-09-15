@@ -37,7 +37,10 @@ export function buildtrendsAggregationPipeline(
   const projection: any = { _id: 0 };
   for (const meterId of meterIds) {
     for (const suffix of suffixes) {
-      projection[`${meterId}_${suffix}`] = 1;
+      const fieldName = `${meterId}_${suffix}`;
+      projection[fieldName] = {
+        $ifNull: [`$${fieldName}`, `$payload.${fieldName}`],
+      };
     }
   }
 
@@ -56,7 +59,7 @@ export function buildtrendsAggregationPipeline(
       $set: {
         normalizedTimestamp: {
           $convert: {
-            input: '$timestamp',
+            input: { $ifNull: ['$timestamp', '$payload.Time'] },
             to: 'date',
             onError: null,
             onNull: null,
